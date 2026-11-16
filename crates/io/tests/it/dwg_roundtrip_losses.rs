@@ -143,6 +143,8 @@ fn viewport_ids_survive_dwg_and_the_paper_viewport_stays_implicit() {
 /// The paper-space viewport (id 1) of a drawing from another program can come after a model
 /// viewport in the layout, e.g. when the draw order (SORTENTS) put it behind. DWG numbers in
 /// order, so the writer puts it first: otherwise the model viewport became the sheet on reopen.
+/// The DWG reader keeps every layout's sheet implicit (the file's viewport stays in its document
+/// and is written back from there), so only the model viewport comes back, with its id.
 #[test]
 fn a_paper_viewport_behind_a_model_viewport_stays_id_1_through_dwg() {
     let mut d = Drawing::new_metric();
@@ -157,7 +159,7 @@ fn a_paper_viewport_behind_a_model_viewport_stays_id_1_through_dwg() {
             Some(EntityKind::Viewport(v)) => Some(v.id),
             _ => None,
         };
-        assert_eq!((id(model), id(sheet)), (Some(2), Some(1)), "layout {name}");
+        assert_eq!((id(model), id(sheet)), (Some(2), None), "layout {name}");
     }
 }
 

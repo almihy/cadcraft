@@ -288,7 +288,8 @@ fn prepare(d: &Drawing, legacy: bool) -> Cow<'_, Drawing> {
         changes.push((e.handle, x));
     }
     let sheets = if base.foreign.dwg_source.is_none() { sheet_views(base) } else { Vec::new() };
-    if changes.is_empty() && starts.is_empty() && sheets.is_empty() && !regions && !mleaders && arrows.is_empty() && matches!(committed, Cow::Borrowed(_)) {
+    let behind = sheets_behind(base);
+    if changes.is_empty() && starts.is_empty() && sheets.is_empty() && behind.is_empty() && !regions && !mleaders && arrows.is_empty() && matches!(committed, Cow::Borrowed(_)) {
         return Cow::Borrowed(d);
     }
     let mut out = committed.into_owned();
@@ -310,6 +311,13 @@ fn prepare(d: &Drawing, legacy: bool) -> Cow<'_, Drawing> {
     }
     if mleaders {
         mleaders_as_leaders(&mut out);
+    }
+    // DWG numbers a layout's viewports in order and takes the first for the sheet: the sheet goes
+    // ahead of the layout's model viewports.
+    for (layout, h) in behind {
+        if let Some(l) = out.layouts.iter_mut().find(|l| l.name == layout) {
+            l.entities.send_to_back(h);
+        }
     }
     for (layout, vp) in sheets {
         let h = out.new_handle();
@@ -362,6 +370,20 @@ fn sheet_views(d: &Drawing) -> Vec<(String, cadcraft_doc::Viewport)> {
                 twist: 0.0,
             },
         ));
+    }
+    out
+}
+
+/// Each layout's sheet viewport (id 1) that comes after another viewport of the layout.
+fn sheets_behind(d: &Drawing) -> Vec<(String, cadcraft_doc::Handle)> {
+    let mut out = Vec::new();
+    for l in &d.layouts {
+        let mut vps = l.entities.iter().filter_map(|e| if let EntityKind::Viewport(v) = &e.kind { Some((e.handle, v.id)) } else { None });
+        if vps.next().is_some_and(|(_, id)| id != 1)
+            && let Some((h, _)) = vps.find(|(_, id)| *id == 1)
+        {
+            out.push((l.name.clone(), h));
+        }
     }
     out
 }

@@ -671,25 +671,30 @@ fn blocks(d: &Drawing, doc: &mut CadDocument) {
 
 /// The current layer, text style, dimension style and linetype by the names the header gives:
 /// the file stores their handles.
+/// Whether two symbol names are one name in any letter case, beyond ASCII too (`Ä` and `ä`).
+fn same_name(a: &str, b: &str) -> bool {
+    a.chars().flat_map(char::to_lowercase).eq(b.chars().flat_map(char::to_lowercase))
+}
+
 fn current_records(d: &Drawing, doc: &mut CadDocument) {
     let s = |name: &str| d.header.get(name).and_then(HVal::as_str).map(str::to_string);
     if let Some(n) = s("CLAYER")
-        && let Some(l) = doc.layers.iter().find(|l| l.name.eq_ignore_ascii_case(&n))
+        && let Some(l) = doc.layers.iter().find(|l| l.name.eq_ignore_ascii_case(&n)).or_else(|| doc.layers.iter().find(|l| same_name(&l.name, &n)))
     {
         (doc.header.current_layer_handle, doc.header.current_layer_name) = (l.handle, l.name.clone());
     }
     if let Some(n) = s("TEXTSTYLE")
-        && let Some(l) = doc.text_styles.iter().find(|l| l.name.eq_ignore_ascii_case(&n))
+        && let Some(l) = doc.text_styles.iter().find(|l| l.name.eq_ignore_ascii_case(&n)).or_else(|| doc.text_styles.iter().find(|l| same_name(&l.name, &n)))
     {
         (doc.header.current_text_style_handle, doc.header.current_text_style_name) = (l.handle, l.name.clone());
     }
     if let Some(n) = s("DIMSTYLE")
-        && let Some(l) = doc.dim_styles.iter().find(|l| l.name.eq_ignore_ascii_case(&n))
+        && let Some(l) = doc.dim_styles.iter().find(|l| l.name.eq_ignore_ascii_case(&n)).or_else(|| doc.dim_styles.iter().find(|l| same_name(&l.name, &n)))
     {
         (doc.header.current_dimstyle_handle, doc.header.current_dimstyle_name) = (l.handle, l.name.clone());
     }
     if let Some(n) = s("CELTYPE")
-        && let Some(l) = doc.line_types.iter().find(|l| l.name.eq_ignore_ascii_case(&n))
+        && let Some(l) = doc.line_types.iter().find(|l| l.name.eq_ignore_ascii_case(&n)).or_else(|| doc.line_types.iter().find(|l| same_name(&l.name, &n)))
     {
         (doc.header.current_linetype_handle, doc.header.current_linetype_name) = (l.handle, l.name.clone());
     }
