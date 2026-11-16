@@ -68,6 +68,60 @@ fn points_ok(c: &ClipBoundary) -> bool {
     c.points.iter().all(|p| p.is_finite()) && !c.polygon().is_empty()
 }
 
+/// The filter's extension-dictionary entry of AutoCAD's inverted-clip record: an XRECORD holding
+/// `102 ACAD_INVERTEDCLIP_ROUNDTRIP` then the boundary (10), and
+/// `102 ACAD_INVERTEDCLIP_ROUNDTRIP_COMPARE` then the filter's own vertices. While the filter
+/// still holds those vertices the clip is inverted, with the first list as its boundary (as
+/// CADCraft's DXF reader takes it).
+const ROUNDTRIP_KEY: &str = "ACAD_XREC_ROUNDTRIP";
+const ROUNDTRIP: &str = "ACAD_INVERTEDCLIP_ROUNDTRIP";
+const COMPARE: &str = "ACAD_INVERTEDCLIP_ROUNDTRIP_COMPARE";
+
+/// The boundary (in the filter's coordinates) of an inverted clip as AutoCAD marks it on filter
+/// `sf`, when the filter still holds the vertices the mark was made for.
+fn roundtrip(doc: &CadDocument, sf: AHandle, f: &SpatialFilter) -> Option<Vec<Vec2>> {
+    use acadrust::objects::XRecordValue;
+    let rec = doc.xrecord(sf, ROUNDTRIP_KEY)?;
+    let (mut boundary, mut compare) = (Vec::new(), Vec::new());
+    // 0 before either list, 1 in the boundary, 2 in the filter's vertices.
+    let mut list = 0;
+    for e in &rec.entries {
+        match (&e.value, e.code) {
+            (XRecordValue::String(s), 102) => {
+                list = match s.trim() {
+                    v if v.eq_ignore_ascii_case(ROUNDTRIP) => 1,
+                    v if v.eq_ignore_ascii_case(COMPARE) => 2,
+                    _ => 0,
+                }
+            }
+            (XRecordValue::Point3D(x, y, _), 10) if list != 0 => {
+                let into = if list == 1 { &mut boundary } else { &mut compare };
+                if into.len() >= MAX_CLIP_VERTICES {
+                    return None;
+                }
+                into.push(Vec2::new(*x, *y));
+            }
+            _ => {}
+        }
+    }
+    let near = |a: f64, b: f64| (a - b).abs() <= 1e-9 * (1.0 + a.abs().max(b.abs()));
+    let same = f.boundary_points.len() == compare.len() && f.boundary_points.iter().zip(&compare).all(|(p, q)| near(p.x, q.x) && near(p.y, q.y));
+    (same && (2..=MAX_CLIP_VERTICES).contains(&boundary.len()) && boundary.iter().all(|p| p.is_finite())).then_some(boundary)
+}
+
+/// The clip filter `sf` holds, inverted when AutoCAD's record says so.
+fn clip_in(doc: &CadDocument, sf: AHandle, f: &SpatialFilter) -> Option<ClipBoundary> {
+    let mut c = clip(f)?;
+    if let Some(outline) = roundtrip(doc, sf, f) {
+        let inverse = mat(&f.inverse_block_transform)?;
+        let inverted = ClipBoundary { points: outline.iter().map(|p| inverse.apply(*p)).collect(), enabled: c.enabled, inverted: true };
+        if points_ok(&inverted) {
+            c = inverted;
+        }
+    }
+    Some(c)
+}
+
 /// The clips of the file's block references, by the reference's handle.
 pub fn read(doc: &CadDocument) -> HashMap<u64, ClipBoundary> {
     let mut out = HashMap::new();
@@ -75,8 +129,8 @@ pub fn read(doc: &CadDocument) -> HashMap<u64, ClipBoundary> {
         let EntityType::Insert(_) = e else { continue };
         let c = e.common();
         let Some(xd) = c.xdictionary_handle else { continue };
-        if let Some((_, f)) = filter_of(doc, xd)
-            && let Some(clip) = clip(f)
+        if let Some((sf, f)) = filter_of(doc, xd)
+            && let Some(clip) = clip_in(doc, sf, f)
         {
             out.insert(c.handle.value(), clip);
         }
@@ -99,7 +153,7 @@ pub fn write(d: &Drawing, doc: &mut CadDocument) {
     for (h, clip) in want {
         let xd = doc.get_entity(h).and_then(|e| e.common().xdictionary_handle);
         let current = xd.and_then(|x| filter_of(doc, x));
-        let held = current.as_ref().map(|(_, f)| (clip_of(f), f));
+        let held = current.as_ref().map(|(sf, f)| (clip_in(doc, *sf, f), f));
         match (&clip, held) {
             // A filter the model can't hold, on a reference that has no clip of its own: kept.
             (None, Some((None, _))) | (None, None) => {}
@@ -117,10 +171,6 @@ pub fn write(d: &Drawing, doc: &mut CadDocument) {
             (Some((c, to_world)), _) => put(doc, h, c, to_world),
         }
     }
-}
-
-fn clip_of(f: &SpatialFilter) -> Option<ClipBoundary> {
-    clip(f)
 }
 
 /// Give reference `h` the filter of `c` (in the block's coordinates; `to_world` the reference's
@@ -181,5 +231,27 @@ fn put(doc: &mut CadDocument, h: AHandle, c: &ClipBoundary, to_world: &Mat3) {
     {
         x.entries.retain(|(k, _)| !k.eq_ignore_ascii_case("SPATIAL"));
         x.add_entry("SPATIAL", fh);
+    }
+    // An inverted clip: AutoCAD's record in the filter's extension dictionary, the boundary and
+    // the filter's vertices the same list. A clip no longer inverted loses it.
+    if c.inverted {
+        let world: Vec<Vec2> = c.points.iter().map(|p| to_world.apply(*p)).collect();
+        let r = doc.ensure_xrecord(fh, ROUNDTRIP_KEY);
+        if let Some(ObjectType::XRecord(x)) = doc.objects.get_mut(&r) {
+            x.entries.clear();
+            for name in [ROUNDTRIP, COMPARE] {
+                x.add_entry(acadrust::objects::XRecordEntry::string(102, name));
+                for p in &world {
+                    x.add_entry(acadrust::objects::XRecordEntry::point3d(10, p.x, p.y, 0.0));
+                }
+            }
+        }
+    } else if let Some(xd) = doc.extension_dictionary_handle(fh)
+        && let Some(r) = entry(doc, xd, ROUNDTRIP_KEY)
+    {
+        doc.objects.remove(&r);
+        if let Some(ObjectType::Dictionary(x)) = doc.objects.get_mut(&xd) {
+            x.entries.retain(|(k, _)| !k.eq_ignore_ascii_case(ROUNDTRIP_KEY));
+        }
     }
 }
