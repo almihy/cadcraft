@@ -4,7 +4,7 @@
 //! in, and `catch_unwind` can't stop that. So a native app reads each DWG first in a copy of
 //! itself: [`use_own_worker`] says how to start one, and [`serve_if_asked`], first thing in
 //! `main`, turns the copy into a worker that reads one request from standard input and writes one
-//! reply to standard output. The worker decodes the file and translates it as the app would; when
+//! reply to standard output. The worker decodes the file as the app will; when
 //! it comes back unharmed, the app reads the same bytes itself (acadrust's decoding is
 //! deterministic), and when it doesn't, the file costs that one open and every other open drawing
 //! stays safe.
@@ -212,8 +212,12 @@ fn handle(mut b: &[u8]) -> Reply {
     let max_dwg_bytes = take_u64(&mut b).and_then(|n| usize::try_from(n).ok()).ok_or_else(bad)?;
     let max_records = take_u64(&mut b).and_then(|n| usize::try_from(n).ok()).ok_or_else(bad)?;
     match op {
-        // The whole read, as the app will do it: decoding and translation.
-        READ => crate::read_here(b, Limits { max_dwg_bytes, max_records }).map(|(_, notes)| notes),
+        // The third-party decoding (the translation after it is CADCraft's own, guarded in the
+        // app by `catch_unwind`).
+        READ => {
+            crate::check_size(b, Limits { max_dwg_bytes, max_records })?;
+            crate::guarded("the DWG reader failed on this file", || crate::read::decode(b, Limits { max_dwg_bytes, max_records }))?.map(|(_, notes)| notes)
+        }
         CRASH => std::process::abort(),
         _ => Err(bad()),
     }

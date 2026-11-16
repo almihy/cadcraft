@@ -207,7 +207,36 @@ pub fn drawing(doc: &CadDocument, version: &str) -> Drawing {
         d.scales = list;
     }
     dim_associations(doc, &mut d);
+    draw_order(doc, &mut d);
     d
+}
+
+/// Each space and block with a draw order table (SORTENTSTABLE) in its sort order: an entity the
+/// table lists by its sort handle, any other by its own handle; a sort handle of 0 draws last.
+fn draw_order(doc: &CadDocument, d: &mut Drawing) {
+    let layout_of: HashMap<u64, String> = doc
+        .objects
+        .values()
+        .filter_map(|o| if let ObjectType::Layout(l) = o { Some((l.block_record.value(), l.name.clone())) } else { None })
+        .collect();
+    for o in doc.objects.values() {
+        let ObjectType::SortEntitiesTable(t) = o else { continue };
+        let key = |e: &cadcraft_doc::Entity| {
+            let k = t.effective_sort_handle(acadrust::types::Handle::new(e.handle.0)).value();
+            (k == 0, k)
+        };
+        let owner = t.block_owner_handle;
+        let Some(br) = doc.block_records.iter().find(|b| b.handle == owner) else { continue };
+        if br.is_model_space() {
+            d.model.sort_by_key(key);
+        } else if let Some(name) = layout_of.get(&owner.value()) {
+            if let Some(l) = d.layouts.iter_mut().find(|l| &l.name == name) {
+                l.entities.sort_by_key(key);
+            }
+        } else if let Some(b) = d.blocks.get_mut(&br.name) {
+            Arc::make_mut(b).entities.sort_by_key(key);
+        }
+    }
 }
 
 /// Dimensions' associativity from the file's DIMASSOC objects.

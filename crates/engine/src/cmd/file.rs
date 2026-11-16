@@ -827,6 +827,10 @@ pub fn not_saved_as(d: &Drawing, version: Version) -> std::collections::BTreeMap
     let stores = std::iter::once(&d.model).chain(d.layouts.iter().map(|l| &l.entities)).chain(d.blocks.values().map(|b| &b.entities));
     for e in stores.flat_map(|s| s.iter()) {
         if let cadcraft_doc::EntityKind::Unknown(u) = &e.kind {
+            // An object of the DWG the drawing was read from goes back out as the file had it.
+            if d.foreign.dwg_source.as_ref().is_some_and(|s| s.keeps(e.handle)) {
+                continue;
+            }
             // A DWG before 2013 writes a solid's SAT text as it is; from 2013 the geometry has to be
             // in the data store, and SAT text alone is lost (#2334).
             if MODELER_TYPES.iter().any(|t| u.dxf_type.eq_ignore_ascii_case(t))

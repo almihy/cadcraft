@@ -19,7 +19,7 @@ use crate::{Limits, Unwritten};
 
 pub fn write(d: &Drawing, v: DxfVersion) -> Result<(Vec<u8>, Unwritten), String> {
     let mut doc = match &d.foreign.dwg_source {
-        Some(src) => crate::read::decode(&src.0, Limits::DEFAULT)?.0,
+        Some(src) => crate::read::decode(&src.bytes, Limits::DEFAULT)?.0,
         None => CadDocument::new(),
     };
     doc.version = v;
@@ -161,8 +161,38 @@ fn container(doc: &mut CadDocument, br: AHandle, store: &EntityStore, names: &Na
     if let Some(record) = doc.block_records.iter_mut().find(|b| b.handle == br)
         && record.entity_handles != order
     {
-        record.entity_handles = order;
+        record.entity_handles.clone_from(&order);
     }
+    sort_table(doc, br, &order);
+}
+
+/// A block record's draw order table (SORTENTSTABLE), when it has one, made to give `order`: the
+/// sort handles it already uses go to the entities in that order (a table that already gives it
+/// stays as read).
+fn sort_table(doc: &mut CadDocument, br: AHandle, order: &[AHandle]) {
+    use acadrust::objects::ObjectType;
+    let Some(t) = doc.objects.values_mut().find_map(|o| match o {
+        ObjectType::SortEntitiesTable(t) if t.block_owner_handle == br => Some(t),
+        _ => None,
+    }) else {
+        return;
+    };
+    let key = |k: u64| (k == 0, k);
+    let keys: Vec<u64> = order.iter().map(|h| t.effective_sort_handle(*h).value()).collect();
+    if keys.windows(2).all(|w| key(w[0]) <= key(w[1])) {
+        return;
+    }
+    let mut sorted = keys.clone();
+    sorted.sort_by_key(|k| key(*k));
+    sorted.dedup();
+    if sorted.len() != order.len() {
+        return;
+    }
+    t.clear();
+    for (h, k) in order.iter().zip(sorted) {
+        t.add_entry(*h, AHandle::new(k));
+    }
+    t.raw_dxf_codes = None;
 }
 
 /// Layers, linetypes, text styles and dimension styles: records matched by name, written when

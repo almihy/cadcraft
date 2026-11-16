@@ -50,20 +50,33 @@ impl ForeignExtra {
     }
 }
 
-/// The bytes of a DWG file a drawing was read from. Shared, never copied: undo snapshots and
-/// copies of the drawing hold the same bytes. Two are equal when they are the same bytes.
+/// The DWG file a drawing was read from. Shared, never copied: undo snapshots and copies of the
+/// drawing hold the same bytes. Two are equal when they hold the same bytes.
 #[derive(Clone)]
-pub struct DwgSource(pub std::sync::Arc<[u8]>);
+pub struct DwgSource {
+    /// The file's bytes.
+    pub bytes: std::sync::Arc<[u8]>,
+    /// The file's entities CADCraft keeps as [`crate::EntityKind::Unknown`]: saving as DWG writes
+    /// them back as the file had them (a copy made in CADCraft, with another handle, can't be).
+    pub kept: std::sync::Arc<BTreeSet<Handle>>,
+}
+
+impl DwgSource {
+    /// Whether a DWG save writes the unmodelled entity `h` back.
+    pub fn keeps(&self, h: Handle) -> bool {
+        self.kept.contains(&h)
+    }
+}
 
 impl PartialEq for DwgSource {
     fn eq(&self, other: &Self) -> bool {
-        std::sync::Arc::ptr_eq(&self.0, &other.0)
+        std::sync::Arc::ptr_eq(&self.bytes, &other.bytes)
     }
 }
 
 impl std::fmt::Debug for DwgSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "DwgSource({} bytes)", self.0.len())
+        write!(f, "DwgSource({} bytes, {} unmodelled entities)", self.bytes.len(), self.kept.len())
     }
 }
 

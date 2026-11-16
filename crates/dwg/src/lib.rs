@@ -120,9 +120,16 @@ pub fn read_here(bytes: &[u8], limits: Limits) -> Result<(Drawing, Vec<String>),
     check_size(bytes, limits)?;
     let doc = guarded("the DWG reader failed on this file", || read::document(bytes, limits))??;
     let (mut d, notes) = doc;
-    let source = std::sync::Arc::<[u8]>::from(bytes);
+    let kept = std::iter::once(&d.model)
+        .chain(d.layouts.iter().map(|l| &l.entities))
+        .chain(d.blocks.values().map(|b| &b.entities))
+        .flat_map(|s| s.iter())
+        .filter(|e| matches!(e.kind, cadcraft_doc::EntityKind::Unknown(_)))
+        .map(|e| e.handle)
+        .collect();
     let mut foreign = (*d.foreign).clone();
-    foreign.dwg_source = Some(cadcraft_doc::foreign::DwgSource(source));
+    foreign.dwg_source =
+        Some(cadcraft_doc::foreign::DwgSource { bytes: std::sync::Arc::from(bytes), kept: std::sync::Arc::new(kept) });
     d.foreign = std::sync::Arc::new(foreign);
     Ok((d, notes))
 }
