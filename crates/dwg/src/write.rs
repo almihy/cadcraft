@@ -92,6 +92,7 @@ pub fn into_document(d: &Drawing, doc: &mut CadDocument, ext: &dyn crate::Extens
             table_styles: &table_styles,
             mleader_styles: &mleader_styles,
             tables: Vec::new(),
+            taken: record_handles(doc),
         };
         // Block definitions (an xref's objects come from its file), model space, layouts.
         for b in d.blocks.values().filter(|b| b.xref_path.is_none()) {
@@ -261,6 +262,37 @@ fn table_blocks(d: &Drawing, doc: &mut CadDocument, tables: &[AHandle], ext: &dy
     }
 }
 
+/// The handles of the document's table records (and their tables), block records with their
+/// markers, and objects.
+fn record_handles(doc: &CadDocument) -> HashSet<u64> {
+    let mut out = HashSet::new();
+    macro_rules! table {
+        ($t:expr) => {{
+            out.insert($t.handle().value());
+            for r in $t.iter() {
+                out.insert(r.handle.value());
+            }
+        }};
+    }
+    table!(doc.layers);
+    table!(doc.line_types);
+    table!(doc.text_styles);
+    table!(doc.dim_styles);
+    table!(doc.app_ids);
+    table!(doc.views);
+    table!(doc.vports);
+    table!(doc.ucss);
+    table!(doc.block_records);
+    for b in doc.block_records.iter() {
+        out.insert(b.block_entity_handle.value());
+        out.insert(b.block_end_handle.value());
+    }
+    out.extend(doc.objects.keys().map(|h| h.value()));
+    out.insert(doc.header.named_objects_dict_handle.value());
+    out.remove(&0);
+    out
+}
+
 /// The block records of the document's tables (each table's `*T` block).
 pub fn table_block_records(doc: &CadDocument) -> HashSet<u64> {
     doc.entities()
@@ -415,8 +447,9 @@ fn container(
                 match build(e, None, cx) {
                     Some(mut new) => {
                         new.common_mut().owner_handle = br;
-                        // An entity the drawing has given no handle yet takes the writer's next.
-                        let h = if h.is_null() {
+                        // An entity the drawing has given no handle yet, or one under a handle
+                        // of the document's records, takes the writer's next.
+                        let h = if h.is_null() || cx.taken.contains(&h.value()) {
                             let x = (cx.alloc)();
                             new.common_mut().handle = x;
                             x

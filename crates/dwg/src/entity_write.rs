@@ -26,6 +26,9 @@ pub struct Cx<'a> {
     pub mleader_styles: &'a HashMap<String, AHandle>,
     /// Tables written from the drawing (new or changed): their blocks are drawn again.
     pub tables: Vec<AHandle>,
+    /// The handles of the document's records and objects (not its entities): an entity of the
+    /// drawing under one of them is given a handle of its own.
+    pub taken: std::collections::HashSet<u64>,
 }
 
 /// The handle of the style `name` in `map` (upper-case names), Standard's when it has none.
