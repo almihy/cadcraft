@@ -138,9 +138,9 @@ fn call(header: &[u8], payload: &[u8], doing: &str) -> Option<Result<Vec<String>
         received
     });
     let status = child.wait();
-    let stopped = || format!("the DWG reader stopped while {doing}; nothing else is affected");
+    let stopped = || format!("the DWG worker stopped while {doing}; nothing else is affected");
     Some(match (received, status) {
-        (Err(RecvTimeoutError::Timeout), _) => Err(format!("{doing} took too long, so the DWG reader was stopped; nothing else is affected")),
+        (Err(RecvTimeoutError::Timeout), _) => Err(format!("{doing} took too long, so the DWG worker was stopped; nothing else is affected")),
         (Ok(Ok(reply)), Ok(status)) if status.success() => parse_reply(&reply).ok_or_else(stopped).and_then(|r| r),
         _ => Err(stopped()),
     })

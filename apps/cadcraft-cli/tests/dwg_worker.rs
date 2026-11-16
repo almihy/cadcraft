@@ -1,12 +1,12 @@
-//! The DWG reader and writer run in a child process, so a decoder that dies ends one open or save,
-//! not the app. The worker setting is process-wide, so everything runs in one test.
+//! A DWG is decoded first in a child process, so a decoder that dies ends one open, not the app;
+//! saving writes the app's own drawing in this process. The worker setting is process-wide, so everything runs in one test.
 
 #![cfg(not(any(target_arch = "wasm32", all(target_os = "freebsd", target_arch = "aarch64"))))]
 
 use cadcraft_io::dwg_worker;
 
 #[test]
-fn a_real_worker_reads_and_writes_and_its_death_is_an_error_here() {
+fn a_real_worker_reads_and_its_death_is_an_error_here() {
     let drawing = cadcraft_engine::sample::bracket();
     let in_process = cadcraft_io::write(&drawing, "a.dwg").unwrap();
 
@@ -16,12 +16,9 @@ fn a_real_worker_reads_and_writes_and_its_death_is_an_error_here() {
     let read = cadcraft_io::read(&written, "a.dwg").unwrap();
     assert_eq!(read.model.len(), drawing.model.len());
 
-    // A drawing whose kept objects came from a 2018 file: the worker gets that version with the
-    // request and reads the bridge DXF as it, as this process does.
-    let mut kept = drawing.clone();
-    kept.foreign = std::sync::Arc::new(cadcraft_engine::doc::foreign::Foreign { version: Some("AC1032".into()), ..Default::default() });
-    let written = cadcraft_io::write(&kept, "a.dwg").unwrap();
-    assert_eq!(cadcraft_io::read(&written, "a.dwg").unwrap().model.len(), drawing.model.len());
+    // A drawing read from a DWG is written back into that file's document.
+    let again = cadcraft_io::write(&read, "a.dwg").unwrap();
+    assert_eq!(cadcraft_io::read(&again, "a.dwg").unwrap().model.len(), drawing.model.len());
 
     // A decode error comes back as that error, not as the worker stopping.
     let mut bad = in_process.clone();

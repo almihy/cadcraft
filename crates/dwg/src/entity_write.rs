@@ -26,8 +26,9 @@ fn z() -> Vector3 {
 
 /// `e` as acadrust's entity: written onto `prev` (the file's object of the same handle) when it
 /// is of a kind that can take it, else made new keeping `prev`'s identity (owner, extension
-/// dictionary, reactors, extended data). `None` when CADCraft can't write the kind (an
-/// [`EntityKind::Unknown`] it didn't read from the file).
+/// dictionary, reactors, extended data). `None` when CADCraft can't write it: an
+/// [`EntityKind::Unknown`] it didn't read from the file, or a kind it reads but doesn't write yet
+/// (multileaders, multilines, tables, helices).
 pub fn build(e: &Entity, prev: Option<&EntityType>, cx: &mut Cx) -> Option<EntityType> {
     let c = &e.common;
     let n = c.extrusion;
@@ -355,8 +356,9 @@ pub fn build(e: &Entity, prev: Option<&EntityType>, cx: &mut Cx) -> Option<Entit
             x.dimension_style_handle = None;
             EntityType::Tolerance(x)
         }
-        // Not written from CADCraft's model yet: the file's object stays as it was read.
-        EntityKind::Helix(_) | EntityKind::MLine(_) | EntityKind::MLeader(_) | EntityKind::Table(_) | EntityKind::Region(_) => return prev.cloned(),
+        // Not written from CADCraft's model yet: a changed one is reported, and the file's
+        // object stays as it was read.
+        EntityKind::Helix(_) | EntityKind::MLine(_) | EntityKind::MLeader(_) | EntityKind::Table(_) | EntityKind::Region(_) => return None,
     };
     let common = out.common_mut();
     if let Some(p) = prev {

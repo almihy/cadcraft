@@ -27,6 +27,8 @@ pub struct Names {
     pub styles: HashMap<u64, String>,
     /// Image definitions: file path and pixel size, by handle.
     pub images: HashMap<u64, (String, Vec2, u8)>,
+    /// Multileader styles, by handle.
+    pub mleader_styles: HashMap<u64, String>,
 }
 
 impl Names {
@@ -52,6 +54,9 @@ impl Names {
                     _ => 0,
                 };
                 n.images.insert(d.handle.value(), (d.file_name.clone(), Vec2::new(d.pixel_size.0, d.pixel_size.1), units));
+            }
+            if let acadrust::objects::ObjectType::MultiLeaderStyle(m) = o {
+                n.mleader_styles.insert(m.handle.value(), m.name.clone());
             }
         }
         n
@@ -242,6 +247,7 @@ fn kind(e: &EntityType, names: &Names) -> Option<(Common, EntityKind)> {
                 style: if l.dimension_style.is_empty() { "Standard".into() } else { l.dimension_style.clone() },
             }),
         ),
+        EntityType::MultiLeader(m) => (common(&m.common, 0.0, z, false), EntityKind::MLeader(mleader(m, names))),
         EntityType::Hatch(hx) if !hx.is_mpolygon => {
             let mut cm = common(&hx.common, 0.0, hx.normal, false);
             let k = crate::entity_read::hatch(hx, &mut cm);
@@ -629,6 +635,87 @@ fn dimension(d: &ADim, cm: &Common, names: &Names) -> Dimension {
         dim.marks.oblique = Some(cadcraft_geom::norm_angle(base + ext_rot));
     }
     dim
+}
+
+/// A multileader as the DXF reader takes one: the leader lines (those of the first root run to
+/// its landing, a further root's lines get their own landing as a last vertex), the landing, the
+/// dogleg, and its text or block.
+fn mleader(m: &ae::MultiLeader, names: &Names) -> cadcraft_doc::MLeader {
+    let def = cadcraft_doc::MLeaderStyle::default();
+    let cx = &m.context;
+    let pos = |x: f64| (x > 0.0 && x.is_finite()).then_some(x);
+    let mut leaders: Vec<Vec<Vec3>> = Vec::new();
+    for (i, r) in cx.leader_roots.iter().enumerate() {
+        for l in r.lines.iter().filter(|l| !l.points.is_empty()) {
+            let mut pts: Vec<Vec3> = l.points.iter().map(|p| v3(*p)).collect();
+            if i > 0 {
+                pts.push(v3(r.connection_point));
+            }
+            leaders.push(pts);
+        }
+    }
+    if m.path_type == ae::MultiLeaderPathType::Invisible {
+        leaders.clear();
+    }
+    let landing = cx.leader_roots.first().map(|r| v3(r.connection_point)).unwrap_or_else(|| v3(cx.base_point));
+    let dogleg = if leaders.is_empty() || !m.enable_dogleg {
+        0.0
+    } else {
+        cx.leader_roots.first().map(|r| r.landing_distance).filter(|d| *d >= 0.0).unwrap_or(m.dogleg_length.max(0.0))
+    };
+    let has_block = cx.has_block_contents || m.content_type == ae::LeaderContentType::Block;
+    let has_text = !has_block && (cx.has_text_contents || m.content_type == ae::LeaderContentType::MText);
+    let text = has_text.then(|| {
+        let at = v3(cx.text_location);
+        let d = cx.text_direction;
+        let rotation = if d.x != 0.0 || d.y != 0.0 { d.y.atan2(d.x) } else { cx.text_rotation };
+        let col = (cx.text_attachment_point as u8).clamp(1, 3);
+        let side = if at.x < landing.x { cx.text_right_attachment as u8 } else { cx.text_left_attachment as u8 };
+        let row = match side {
+            2 | 9 => 1,
+            3..=5 => 2,
+            _ => 0,
+        };
+        let style = cx.text_style_handle.or(m.text_style_handle).and_then(|h| names.styles.get(&h.value())).filter(|n| !n.is_empty());
+        MText {
+            insert: at,
+            height: pos(cx.text_height).unwrap_or(def.text_height),
+            width: cx.text_width.max(0.0),
+            attach: row * 3 + col,
+            rotation,
+            style: style.cloned().unwrap_or_else(|| def.text_style.clone()),
+            contents: cx.text_string.clone(),
+            line_spacing: pos(cx.line_spacing_factor).unwrap_or(1.0),
+            line_spacing_exact: cx.line_spacing_style as i16 == 2,
+            columns: None,
+        }
+    });
+    let block = cx.block_content_handle.or(m.block_content_handle).and_then(|h| names.blocks.get(&h.value())).filter(|_| has_block).map(|name| {
+        let s = cx.block_content_scale;
+        let nz = |v: f64| if v != 0.0 { v } else { 1.0 };
+        Insert {
+            block: name.clone(),
+            insert: v3(cx.block_content_location),
+            scale: Vec3::new(nz(s.x), nz(s.y), nz(s.z)),
+            rotation: cx.block_rotation,
+            attribs: Vec::new(),
+            cols: 1,
+            rows: 1,
+            col_spacing: 0.0,
+            row_spacing: 0.0,
+            clip: None,
+        }
+    });
+    cadcraft_doc::MLeader {
+        leaders,
+        landing,
+        dogleg,
+        text,
+        style: m.style_handle.and_then(|h| names.mleader_styles.get(&h.value())).cloned().unwrap_or(def.name),
+        arrow_size: pos(cx.arrowhead_size).or(pos(m.arrowhead_size)).unwrap_or(def.arrow_size),
+        spline: m.path_type == ae::MultiLeaderPathType::Spline,
+        block,
+    }
 }
 
 fn viewport(v: &ae::Viewport, names: &Names) -> Viewport {
