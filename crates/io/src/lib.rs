@@ -88,8 +88,8 @@ pub fn read(bytes: &[u8], name: impl AsRef<Path>) -> Result<Drawing> {
 /// harness counts: `None` for every file now (a DWG is read straight into the drawing).
 pub(crate) fn read_source(bytes: &[u8], name: &Path) -> Result<(Drawing, Option<Vec<u8>>)> {
     if cadcraft_dwg::is_dwg(bytes) {
-        let (mut d, _) = cadcraft_dwg::read(bytes, cadcraft_dwg::Limits::DEFAULT).map_err(dwg_error)?;
-        dwg_kept::complete(&mut d, bytes)?;
+        let (mut d, _, kept) = cadcraft_dwg::read_kept(bytes, cadcraft_dwg::Limits::DEFAULT).map_err(dwg_error)?;
+        dwg_kept::complete(&mut d, &kept)?;
         return Ok((d, None));
     }
     let d = match (Format::from_path(name), ext(name).as_str()) {

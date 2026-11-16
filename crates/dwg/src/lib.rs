@@ -119,8 +119,13 @@ pub fn read(bytes: &[u8], limits: Limits) -> Result<(Drawing, Vec<String>), Stri
 /// [`read`] in this process, without the worker.
 pub fn read_here(bytes: &[u8], limits: Limits) -> Result<(Drawing, Vec<String>), String> {
     check_size(bytes, limits)?;
-    let doc = guarded("the DWG reader failed on this file", || read::document(bytes, limits))??;
-    let (mut d, notes) = doc;
+    let (mut d, notes) = guarded("the DWG reader failed on this file", || read::document(bytes, limits))??;
+    attach_source(&mut d, bytes);
+    Ok((d, notes))
+}
+
+/// Keep the file's bytes with the drawing, and its unmodelled entities as read.
+fn attach_source(d: &mut Drawing, bytes: &[u8]) {
     let kept = std::iter::once(&d.model)
         .chain(d.layouts.iter().map(|l| &l.entities))
         .chain(d.blocks.values().map(|b| &b.entities))
@@ -132,7 +137,6 @@ pub fn read_here(bytes: &[u8], limits: Limits) -> Result<(Drawing, Vec<String>),
     foreign.dwg_source =
         Some(cadcraft_doc::foreign::DwgSource { bytes: std::sync::Arc::from(bytes), kept: std::sync::Arc::new(kept) });
     d.foreign = std::sync::Arc::new(foreign);
-    Ok((d, notes))
 }
 
 fn check_size(bytes: &[u8], limits: Limits) -> Result<(), String> {
@@ -180,24 +184,40 @@ pub fn write_seeded(d: &Drawing, seed: acadrust::CadDocument, version: &str) -> 
 /// DXF: what a DXF reader keeps of a file, derived from the DWG when it is wanted (a DXF save of
 /// the drawing, dynamic blocks). The rest of the entities are left out, so it stays small.
 pub fn kept_dxf(source: &[u8]) -> Result<Vec<u8>, String> {
-    guarded("the DWG reader failed on this file", || -> Result<Vec<u8>, String> {
-        let (mut doc, _) = read::decode(source, Limits::DEFAULT)?;
-        let names = entity_read::Names::of(&doc);
-        let keep = |e: &acadrust::EntityType| {
-            use acadrust::EntityType as T;
-            matches!(e, T::Insert(_) | T::Viewport(_) | T::RasterImage(_) | T::Block(_) | T::BlockEnd(_) | T::MultiLeader(_) | T::Helix(_))
-                || entity_read::entity(e, &names).is_some_and(|x| matches!(x.kind, cadcraft_doc::EntityKind::Unknown(_)))
-        };
-        let drop: Vec<acadrust::types::Handle> = doc.entities().filter(|e| !keep(e)).map(|e| e.common().handle).collect();
-        let gone: std::collections::HashSet<u64> = drop.iter().map(|x| x.value()).collect();
-        for x in drop {
-            doc.remove_entity_arc(x);
-        }
-        for b in doc.block_records.iter_mut() {
-            b.entity_handles.retain(|x| !gone.contains(&x.value()));
-        }
-        let mut out = Vec::new();
-        acadrust::DxfWriter::new(&doc).write_to_writer(&mut out).map_err(|e| format!("DWG: {e}"))?;
-        Ok(out)
-    })?
+    let (doc, _) = guarded("the DWG reader failed on this file", || read::decode(source, Limits::DEFAULT))??;
+    guarded("the DWG reader failed on this file", || kept_of(doc))?
+}
+
+/// [`read`] with [`kept_dxf`] of the same file, decoded once.
+pub fn read_kept(bytes: &[u8], limits: Limits) -> Result<(Drawing, Vec<String>, Vec<u8>), String> {
+    check_size(bytes, limits)?;
+    #[cfg(not(target_arch = "wasm32"))]
+    worker::probe(bytes, limits)?;
+    let (doc, notes) = guarded("the DWG reader failed on this file", || read::decode(bytes, limits))??;
+    let version = version(bytes).unwrap_or_else(|| "AC1032".into());
+    let mut d = guarded("the DWG reader failed on this file", || read::drawing(&doc, &version))?;
+    d.read_notes.clone_from(&notes);
+    attach_source(&mut d, bytes);
+    let kept = guarded("the DWG reader failed on this file", || kept_of(doc))??;
+    Ok((d, notes, kept))
+}
+
+fn kept_of(mut doc: acadrust::CadDocument) -> Result<Vec<u8>, String> {
+    let names = entity_read::Names::of(&doc);
+    let keep = |e: &acadrust::EntityType| {
+        use acadrust::EntityType as T;
+        matches!(e, T::Insert(_) | T::Viewport(_) | T::RasterImage(_) | T::Block(_) | T::BlockEnd(_) | T::MultiLeader(_) | T::Helix(_))
+            || entity_read::entity(e, &names).is_some_and(|x| matches!(x.kind, cadcraft_doc::EntityKind::Unknown(_)))
+    };
+    let drop: Vec<acadrust::types::Handle> = doc.entities().filter(|e| !keep(e)).map(|e| e.common().handle).collect();
+    let gone: std::collections::HashSet<u64> = drop.iter().map(|x| x.value()).collect();
+    for x in drop {
+        doc.remove_entity_arc(x);
+    }
+    for b in doc.block_records.iter_mut() {
+        b.entity_handles.retain(|x| !gone.contains(&x.value()));
+    }
+    let mut out = Vec::new();
+    acadrust::DxfWriter::new(&doc).write_to_writer(&mut out).map_err(|e| format!("DWG: {e}"))?;
+    Ok(out)
 }

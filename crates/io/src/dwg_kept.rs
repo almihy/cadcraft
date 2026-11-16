@@ -12,10 +12,9 @@ use crate::{IoError, Result, Version, dxf_read, dxf_write};
 /// block editing), layer states, table, multiline and multileader styles, plot styles,
 /// constraints, and the entities `cadcraft-dwg` reads as unmodelled (tables, multilines, OLE
 /// frames, other programs' proxies) and block clips. Derived from the file's DWG through
-/// acadrust's DXF writer, with the entities CADCraft reads itself left out.
-pub(crate) fn complete(d: &mut Drawing, dwg: &[u8]) -> Result<()> {
-    let dxf = cadcraft_dwg::kept_dxf(dwg).map_err(IoError::Format)?;
-    let k = dxf_read::read(&dxf).map_err(|e| IoError::Format(format!("{e} (in the objects of this DWG)")))?;
+/// acadrust's DXF writer (`cadcraft_dwg::kept_dxf`), with the entities CADCraft reads itself left out.
+pub(crate) fn complete(d: &mut Drawing, kept_dxf: &[u8]) -> Result<()> {
+    let k = dxf_read::read(kept_dxf).map_err(|e| IoError::Format(format!("{e} (in the objects of this DWG)")))?;
     let mut foreign = (*k.foreign).clone();
     foreign.dwg_source.clone_from(&d.foreign.dwg_source);
     foreign.version.clone_from(&d.foreign.version);
