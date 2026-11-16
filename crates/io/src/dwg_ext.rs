@@ -202,6 +202,16 @@ fn apply_payload(k: &mut EntityKind, tags: &[Tag]) {
     }
 }
 
+/// A table's CADCraft extended data (after `1001 CADCRAFT`), as the DXF writer writes it: its
+/// title and header flags, text height and style, then its row and cell data.
+fn table_xdata(t: &cadcraft_doc::Table) -> Vec<Tag> {
+    let mut x = vec![Tag::s(1000, "TABLE"), Tag::s(1070, i64::from(t.title).to_string()), Tag::s(1070, i64::from(t.header).to_string())];
+    x.push(Tag::s(1040, format!("{:?}", t.text_height)));
+    x.push(Tag::s(1000, t.style.clone()));
+    x.extend(crate::dxf_table::table_xdata(t).into_iter().map(|c| Tag::s(1000, c)));
+    x
+}
+
 /// Kinds whose CADCraft extended data the DXF writer writes.
 fn has_payload(k: &EntityKind) -> bool {
     matches!(k, EntityKind::Dimension(_) | EntityKind::Viewport(_) | EntityKind::Table(_) | EntityKind::Hatch(_))
@@ -259,8 +269,13 @@ fn prepare(d: &Drawing, legacy: bool) -> Cow<'_, Drawing> {
         if !has_payload(&e.kind) {
             continue;
         }
-        let (_, tags) = crate::dxf_write::entity_groups(base, e);
-        let mut own = dxf_ext::xdata(&tags, dxf_ext::APP).to_vec();
+        let mut own = match &e.kind {
+            EntityKind::Table(t) => table_xdata(t),
+            _ => {
+                let (_, tags) = crate::dxf_write::entity_groups(base, e);
+                dxf_ext::xdata(&tags, dxf_ext::APP).to_vec()
+            }
+        };
         if matches!(e.kind, EntityKind::Dimension(_)) {
             // An arc length dimension is one in DWG itself.
             own = without_list(&own, "ARCLEN");

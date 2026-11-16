@@ -415,6 +415,14 @@ fn container(
                 match build(e, None, cx) {
                     Some(mut new) => {
                         new.common_mut().owner_handle = br;
+                        // An entity the drawing has given no handle yet takes the writer's next.
+                        let h = if h.is_null() {
+                            let x = (cx.alloc)();
+                            new.common_mut().handle = x;
+                            x
+                        } else {
+                            h
+                        };
                         let table = matches!(new, EntityType::Table(_));
                         if doc.add_entity(new).is_ok() {
                             order.push(h);

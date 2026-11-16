@@ -568,6 +568,14 @@ fn tag_eq(a: &RawTag, b: &RawTag, o: &Options) -> bool {
 }
 
 /// How two group lists differ, or `None` when they hold the same values.
+/// The groups of an unknown entity that are its data: without the handle (5) and owner (330)
+/// a DXF record starts with, which the record's identity holds (the writers write them from the
+/// entity, and a DWG has no groups for them).
+fn data_groups(t: &[RawTag]) -> &[RawTag] {
+    let skip = t.iter().take_while(|g| matches!(g.code, 5 | 330)).count();
+    t.get(skip..).unwrap_or(&[])
+}
+
 fn tags_diff(a: &[RawTag], b: &[RawTag], o: &Options) -> Option<String> {
     let first = a.iter().zip(b).position(|(x, y)| !tag_eq(x, y, o));
     if first.is_none() && a.len() == b.len() {
@@ -778,7 +786,7 @@ fn compare_entity(container: &str, x: &Entity, y: &Entity, ctx: &Ctx, out: &mut 
     }
     match (&x.kind, &y.kind) {
         (EntityKind::Unknown(u), EntityKind::Unknown(v)) => {
-            if let Some(d) = tags_diff(&u.tags, &v.tags, out.opts) {
+            if let Some(d) = tags_diff(data_groups(&u.tags), data_groups(&v.tags), out.opts) {
                 out.push(Category::Opaque, Change::Changed, place.clone(), d);
             }
         }
