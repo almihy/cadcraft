@@ -264,7 +264,11 @@ fn kind(e: &EntityType, names: &Names) -> Option<(Common, EntityKind)> {
         EntityType::RasterImage(img) => (common(&img.common, 0.0, z, false), EntityKind::Image(image(img, names))),
         EntityType::Wipeout(w) => {
             let (o, u, v) = (v3(w.insertion_point).xy(), v3(w.u_vector).xy(), v3(w.v_vector).xy());
-            let boundary = w.clip_boundary_vertices.iter().map(|q| o + u * (q.x + 0.5) + v * (0.5 - q.y)).collect();
+            let mut boundary: Vec<Vec2> = w.clip_boundary_vertices.iter().map(|q| o + u * (q.x + 0.5) + v * (0.5 - q.y)).collect();
+            // A polygon's closing vertex repeats its first.
+            if boundary.len() > 3 && boundary.first().zip(boundary.last()).is_some_and(|(a, b)| a.near(*b, 1e-12)) {
+                boundary.pop();
+            }
             (common(&w.common, 0.0, z, false), EntityKind::Wipeout(Wipeout { boundary }))
         }
         EntityType::Tolerance(t) => {

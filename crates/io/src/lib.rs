@@ -241,4 +241,6 @@ pub fn write_dxf(d: &Drawing) -> String {
 mod dxf_region;
 
 #[cfg(test)]
+mod dwg_support;
+#[cfg(test)]
 mod tests;

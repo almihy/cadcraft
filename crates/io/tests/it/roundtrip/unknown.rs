@@ -82,7 +82,7 @@ pub(super) fn check(path: &str, version: Version, binary: bool) {
             assert_eq!(craft_dxf::is_binary(&bytes), binary, "{context}: encoding");
             dxf_owner(&bytes);
         } else {
-            assert_eq!(craft_dwg::version(&bytes).as_deref(), Some(version.code()), "{context}: wire version");
+            assert_eq!(crate::dwg_support::version(&bytes).as_deref(), Some(version.code()), "{context}: wire version");
         }
         let back = read(&bytes, path).unwrap();
         preserved(&original, &back, &context);

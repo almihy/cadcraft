@@ -1,6 +1,8 @@
 //! #1651: angular, diameter and radius dimensions are saved with a DIMASSOC object, as linear
 //! and ordinate dimensions already are, so AutoCAD follows their geometry. The standard objects
 //! alone (CADCraft xdata stripped) must associate the same points, in DXF and in DWG.
+#[path = "support/dwg.rs"]
+mod dwg_support;
 
 use cadcraft_doc::{AssocSnap, Circle, Common, DimAssoc, DimKind, Dimension, Drawing, EntityKind, Handle, Line, Space};
 use cadcraft_geom::Vec3;
@@ -285,7 +287,7 @@ fn standard_dimassoc_associates_in_dxf_and_dwg() {
     let back = read_dxf(plain.as_bytes()).unwrap();
     assert_standard_assoc(&c, &back, "DXF");
 
-    let dwg = craft_dwg::dxf_to_dwg_as(plain.as_bytes(), Version::R2018.code()).unwrap();
+    let dwg = dwg_support::dxf_to_dwg_as(plain.as_bytes(), Version::R2018.code()).unwrap();
     let back = read(&dwg, "case.dwg").unwrap();
     assert_standard_assoc(&c, &back, "DWG");
 }

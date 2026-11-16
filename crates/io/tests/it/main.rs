@@ -1,3 +1,5 @@
+#[path = "../support/dwg.rs"]
+mod dwg_support;
 mod acad_interop;
 #[cfg(not(target_arch = "wasm32"))]
 mod acis_data_store;
