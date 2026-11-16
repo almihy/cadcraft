@@ -258,6 +258,9 @@ fn kept_of(mut doc: acadrust::CadDocument) -> Result<Vec<u8>, String> {
         use acadrust::EntityType as T;
         matches!(e, T::Insert(_) | T::Viewport(_) | T::RasterImage(_) | T::Block(_) | T::BlockEnd(_) | T::MultiLeader(_) | T::Helix(_))
             || entity_read::entity(e, &names).is_some_and(|x| matches!(x.kind, cadcraft_doc::EntityKind::Unknown(_)))
+            // An entity's extension dictionary and reactors are kept as the DXF reader keeps them.
+            || e.common().xdictionary_handle.is_some_and(|x| !x.is_null())
+            || !e.common().reactors.is_empty()
     };
     let drop: Vec<acadrust::types::Handle> = doc.entities().filter(|e| !keep(e)).map(|e| e.common().handle).collect();
     let gone: std::collections::HashSet<u64> = drop.iter().map(|x| x.value()).collect();

@@ -33,11 +33,12 @@ fn canonical_reference(kind: &str, name: &str) {
 #[test]
 fn legacy_block_metadata() {
     // DWG BLOCK_HEADER gains insertion units and explodability in R2007 (ODA specification).
+    // An older file keeps the units in the block record's `ACAD` "DesignCenter Data" extended
+    // data, as AutoCAD writes them, so they come back; explodability is lost.
     for case in blocks::metadata() {
         let mut expected = case.drawing.clone();
         let block = std::sync::Arc::make_mut(expected.blocks.get_mut("Z_Leaf").unwrap());
         block.explodable = true;
-        block.units = 0;
         for version in [Version::R2000, Version::R2004] {
             super::check_version(&case.name, &case.drawing, &expected, version);
         }
