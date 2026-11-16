@@ -250,6 +250,7 @@ fn prepare(d: &Drawing, legacy: bool) -> Cow<'_, Drawing> {
     let mut mleaders = false;
     // Justified text: the file holds where its baseline starts, as the DXF writer works it out.
     let mut starts: Vec<(cadcraft_doc::Handle, cadcraft_geom::Vec3)> = Vec::new();
+    let mut attrib_starts: Vec<(cadcraft_doc::Handle, Vec<(usize, cadcraft_geom::Vec3)>)> = Vec::new();
     for e in all(base) {
         mleaders |= legacy && matches!(e.kind, EntityKind::MLeader(_));
         // (An attribute definition's stored start is its own: one with no value is drawn as its tag.)
@@ -261,6 +262,18 @@ fn prepare(d: &Drawing, legacy: bool) -> Cow<'_, Drawing> {
             let at = crate::dxf_write::text_insert(base, t);
             if at != t.insert {
                 starts.push((e.handle, at));
+            }
+        }
+        // A reference's justified attributes too.
+        if let EntityKind::Insert(i) = &e.kind {
+            let moved: Vec<(usize, cadcraft_geom::Vec3)> = i
+                .attribs
+                .iter()
+                .enumerate()
+                .filter_map(|(k, a)| Some(crate::dxf_write::text_insert(base, &a.text)).filter(|at| *at != a.text.insert).map(|at| (k, at)))
+                .collect();
+            if !moved.is_empty() {
+                attrib_starts.push((e.handle, moved));
             }
         }
         if matches!(e.kind, EntityKind::Region(_)) {
@@ -290,7 +303,7 @@ fn prepare(d: &Drawing, legacy: bool) -> Cow<'_, Drawing> {
     }
     let sheets = if base.foreign.dwg_source.is_none() { sheet_views(base) } else { Vec::new() };
     let behind = sheets_behind(base);
-    if changes.is_empty() && starts.is_empty() && sheets.is_empty() && behind.is_empty() && !regions && !mleaders && arrows.is_empty() && matches!(committed, Cow::Borrowed(_)) {
+    if changes.is_empty() && starts.is_empty() && attrib_starts.is_empty() && sheets.is_empty() && behind.is_empty() && !regions && !mleaders && arrows.is_empty() && matches!(committed, Cow::Borrowed(_)) {
         return Cow::Borrowed(d);
     }
     let mut out = committed.into_owned();
@@ -298,6 +311,17 @@ fn prepare(d: &Drawing, legacy: bool) -> Cow<'_, Drawing> {
         let _ = out.modify_entity(h, |e| {
             strip_app(&mut e.common.xdata, dxf_ext::APP);
             e.common.xdata.extend(x);
+        });
+    }
+    for (h, moved) in attrib_starts {
+        let _ = out.modify_entity(h, |e| {
+            if let EntityKind::Insert(i) = &mut e.kind {
+                for (k, at) in &moved {
+                    if let Some(a) = i.attribs.get_mut(*k) {
+                        a.text.insert = *at;
+                    }
+                }
+            }
         });
     }
     for (h, at) in starts {
