@@ -359,6 +359,7 @@ fn kind(e: &EntityType, names: &Names) -> Option<(Common, EntityKind)> {
             )
         }
         EntityType::Ole2Frame(o) => ole_frame(o),
+        EntityType::Solid3D(_) | EntityType::Region(_) | EntityType::Body(_) => crate::acis::entity(e).unwrap_or_else(|| unknown(e, &unknown_name(e))),
         EntityType::Extended(x) => match &x.data {
             ae::ExtendedEntityData::Proxy(p) => {
                 let graphics = { let g = p.graphics.data(); if g.is_empty() { x.common.graphic_data.clone().unwrap_or_default() } else { g } };

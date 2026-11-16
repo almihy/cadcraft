@@ -85,7 +85,7 @@ pub fn drawing(doc: &CadDocument, version: &str) -> Drawing {
     let proxies = doc.entities().any(|e| matches!(e, acadrust::EntityType::Extended(x) if matches!(x.data, acadrust::entities::ExtendedEntityData::Proxy(_) | acadrust::entities::ExtendedEntityData::RegisteredClass(_))))
         || doc.objects.values().any(|o| matches!(o, ObjectType::ProxyObject(_)));
     let class_order = if proxies { doc.classes.iter().map(|c| c.dxf_name.to_ascii_uppercase()).collect() } else { Vec::new() };
-    d.foreign = Arc::new(cadcraft_doc::foreign::Foreign { version: Some(version.to_string()), class_order, ..Default::default() });
+    d.foreign = Arc::new(cadcraft_doc::foreign::Foreign { version: Some(version.to_string()), class_order, data_store: crate::acis::data_store(doc), ..Default::default() });
 
     // Tables, in the file's order; the standard records CADCraft relies on stay if the file
     // lacks them.

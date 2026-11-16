@@ -705,6 +705,10 @@ fn proxy_classes(
 /// data, extension dictionaries and reactors) and of its unmodelled entities, derived from the
 /// file's DWG through acadrust's DXF writer (`cadcraft_dwg::kept_dxf`). `None` for a drawing not
 /// read from a DWG, or one whose groups are already there.
+/// Solid modeler kinds: the DWG reader keeps groups of their own of them, which the file's own
+/// DXF groups replace for a DXF save.
+const MODELER: [&str; 3] = ["3DSOLID", "REGION", "BODY"];
+
 pub(crate) fn for_dxf(d: &Drawing) -> Result<Option<Drawing>> {
     let Some(src) = &d.foreign.dwg_source else { return Ok(None) };
     let dxf = cadcraft_dwg::kept_dxf(&src.bytes).map_err(IoError::Format)?;
@@ -717,7 +721,7 @@ pub(crate) fn for_dxf(d: &Drawing) -> Result<Option<Drawing>> {
     // The unmodelled entities' groups, as the DXF reader keeps them.
     let take = |store: &mut cadcraft_doc::EntityStore, from: &cadcraft_doc::EntityStore| {
         let hs: Vec<cadcraft_doc::Handle> =
-            store.iter().filter(|e| matches!(&e.kind, EntityKind::Unknown(u) if u.tags.is_empty())).map(|e| e.handle).collect();
+            store.iter().filter(|e| matches!(&e.kind, EntityKind::Unknown(u) if u.tags.is_empty() || MODELER.iter().any(|t| u.dxf_type.eq_ignore_ascii_case(t)))).map(|e| e.handle).collect();
         for h in hs {
             let Some(src) = from.get(h) else { continue };
             if let EntityKind::Unknown(u) = &src.kind {

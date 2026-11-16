@@ -46,6 +46,7 @@ use std::panic::AssertUnwindSafe;
 
 use cadcraft_doc::Drawing;
 
+mod acis;
 mod conv;
 mod entity_read;
 mod entity_write;
