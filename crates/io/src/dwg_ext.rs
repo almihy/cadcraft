@@ -657,6 +657,11 @@ fn foreign_document(d: &Drawing, version: cadcraft_dwg::acadrust::DxfVersion) ->
         _ => true,
     };
     proxy_classes(&mut doc, &classes, version, &named, !d.foreign.class_order.is_empty());
+    // The bridge of a drawing from a file before 2007 writes other characters as `\U+XXXX`
+    // escapes, which acadrust keeps as they are: a DWG of 2007 or later holds the characters.
+    if !from.utf8() && version >= cadcraft_dwg::acadrust::DxfVersion::AC1021 {
+        unescape_records(&mut doc);
+    }
     // The kept proxy objects the DWG doesn't hold: those whose class can't be named, and every
     // one before 2013.
     let legacy = version < cadcraft_dwg::acadrust::DxfVersion::AC1027;
@@ -667,6 +672,33 @@ fn foreign_document(d: &Drawing, version: cadcraft_dwg::acadrust::DxfVersion) ->
         }
     }
     Ok(Some((doc, unwritten)))
+}
+
+/// The strings of the document's records and its dictionaries' names with their `\U+XXXX`
+/// escapes decoded.
+fn unescape_records(doc: &mut CadDocument) {
+    use cadcraft_dwg::acadrust::objects::XRecordValue;
+    for o in doc.objects.values_mut() {
+        match o {
+            ObjectType::XRecord(x) => {
+                for e in &mut x.entries {
+                    if let XRecordValue::String(s) = &mut e.value
+                        && s.contains("\\U+")
+                    {
+                        *s = crate::dwg_foreign::unescape(s);
+                    }
+                }
+            }
+            ObjectType::Dictionary(dc) => {
+                for (k, _) in &mut dc.entries {
+                    if k.contains("\\U+") {
+                        *k = crate::dwg_foreign::unescape(k);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Proxies name their class by number, 500 plus its place in the CLASSES of the file; acadrust

@@ -56,7 +56,7 @@ fn hex(b: &[u8]) -> Vec<String> {
 /// A string of a DWG before 2007, whose characters outside its code page are `\U+XXXX` escapes
 /// (one UTF-16 unit each; a character above U+FFFF is a surrogate pair of them), with the
 /// escapes decoded as the DXF reader decodes them. Malformed escapes stay as they are.
-fn unescape(s: &str) -> String {
+pub(crate) fn unescape(s: &str) -> String {
     if !s.contains("\\U+") {
         return s.to_string();
     }
