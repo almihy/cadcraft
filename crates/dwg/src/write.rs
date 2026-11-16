@@ -18,12 +18,20 @@ use crate::tables::{self as tb, Lookups};
 use crate::{Limits, Unwritten};
 
 pub fn write(d: &Drawing, v: DxfVersion) -> Result<(Vec<u8>, Unwritten), String> {
-    let mut doc = match &d.foreign.dwg_source {
+    let doc = match &d.foreign.dwg_source {
         Some(src) => crate::read::decode(&src.bytes, Limits::DEFAULT)?.0,
         None => CadDocument::new(),
     };
+    write_into(d, doc, v)
+}
+
+/// [`write`] into `doc`.
+pub fn write_into(d: &Drawing, mut doc: CadDocument, v: DxfVersion) -> Result<(Vec<u8>, Unwritten), String> {
     doc.version = v;
-    let unwritten = into_document(d, &mut doc);
+    let mut unwritten = into_document(d, &mut doc);
+    for (kind, n) in crate::objects::drop_unwritable(&mut doc) {
+        *unwritten.entry(kind).or_default() += n;
+    }
     let dwg = acadrust::DwgWriter::write_to_vec(&doc).map_err(|e| format!("DWG write: {e}"))?;
     Ok((dwg, unwritten))
 }
@@ -58,19 +66,33 @@ pub fn into_document(d: &Drawing, doc: &mut CadDocument) -> Unwritten {
         // Block definitions (an xref's objects come from its file), model space, layouts.
         for b in d.blocks.values().filter(|b| b.xref_path.is_none()) {
             if let Some(br) = blocks.get(&up(&b.name)) {
-                container(doc, *br, &b.entities, &names, &mut cx, &mut unwritten);
+                container(doc, *br, &b.entities, (&names, d.foreign.dwg_source.as_ref()), &mut cx, &mut unwritten);
             }
         }
         let ms = doc.block_records.iter().find(|b| b.is_model_space()).map(|b| b.handle);
         if let Some(ms) = ms {
-            container(doc, ms, &d.model, &names, &mut cx, &mut unwritten);
+            container(doc, ms, &d.model, (&names, d.foreign.dwg_source.as_ref()), &mut cx, &mut unwritten);
         }
         for l in &d.layouts {
             let Some(br) = layout_record(doc, &l.name) else { continue };
-            container(doc, br, &l.entities, &names, &mut cx, &mut unwritten);
+            container(doc, br, &l.entities, (&names, d.foreign.dwg_source.as_ref()), &mut cx, &mut unwritten);
         }
     }
     doc.header.handle_seed = doc.header.handle_seed.max(next.get());
+    crate::objects::write_layouts(d, doc);
+    crate::objects::write_groups(d, doc);
+    crate::objects::write_views(d, doc);
+    crate::objects::write_active_vport(d, doc);
+    for l in &d.layouts {
+        for o in doc.objects.values_mut() {
+            if let acadrust::objects::ObjectType::Layout(x) = o
+                && x.name.eq_ignore_ascii_case(&l.name)
+            {
+                x.tab_order = i16::try_from(l.tab_order).unwrap_or(x.tab_order);
+                crate::objects::put_page(x, &l.page, l.limits);
+            }
+        }
+    }
     unwritten
 }
 
@@ -99,7 +121,14 @@ fn kept_aside(e: &EntityType, names: &Names) -> bool {
 }
 
 /// Make one block record's entities the drawing's `store`.
-fn container(doc: &mut CadDocument, br: AHandle, store: &EntityStore, names: &Names, cx: &mut Cx, unwritten: &mut Unwritten) {
+fn container(
+    doc: &mut CadDocument,
+    br: AHandle,
+    store: &EntityStore,
+    (names, kept): (&Names, Option<&cadcraft_doc::foreign::DwgSource>),
+    cx: &mut Cx,
+    unwritten: &mut Unwritten,
+) {
     let Some(record) = doc.block_records.iter().find(|b| b.handle == br) else { return };
     let before: Vec<AHandle> = record.entity_handles.clone();
     let mine: HashSet<u64> = store.iter().map(|e| e.handle.0).collect();
@@ -123,7 +152,7 @@ fn container(doc: &mut CadDocument, br: AHandle, store: &EntityStore, names: &Na
         match doc.get_entity(h).filter(|_| had.contains(&h.value())) {
             Some(p) => {
                 order.push(h);
-                if entity_read::entity(p, names).as_ref() == Some(e.as_ref()) {
+                if entity_read::entity(p, names).as_ref() == Some(e.as_ref()) || kept.is_some_and(|k| k.keeps(e)) {
                     continue;
                 }
                 let p = p.clone();
@@ -396,21 +425,21 @@ fn current_records(d: &Drawing, doc: &mut CadDocument) {
     if let Some(n) = s("CLAYER")
         && let Some(l) = doc.layers.iter().find(|l| l.name.eq_ignore_ascii_case(&n))
     {
-        doc.header.current_layer_handle = l.handle;
+        (doc.header.current_layer_handle, doc.header.current_layer_name) = (l.handle, l.name.clone());
     }
     if let Some(n) = s("TEXTSTYLE")
         && let Some(l) = doc.text_styles.iter().find(|l| l.name.eq_ignore_ascii_case(&n))
     {
-        doc.header.current_text_style_handle = l.handle;
+        (doc.header.current_text_style_handle, doc.header.current_text_style_name) = (l.handle, l.name.clone());
     }
     if let Some(n) = s("DIMSTYLE")
         && let Some(l) = doc.dim_styles.iter().find(|l| l.name.eq_ignore_ascii_case(&n))
     {
-        doc.header.current_dimstyle_handle = l.handle;
+        (doc.header.current_dimstyle_handle, doc.header.current_dimstyle_name) = (l.handle, l.name.clone());
     }
     if let Some(n) = s("CELTYPE")
         && let Some(l) = doc.line_types.iter().find(|l| l.name.eq_ignore_ascii_case(&n))
     {
-        doc.header.current_linetype_handle = l.handle;
+        (doc.header.current_linetype_handle, doc.header.current_linetype_name) = (l.handle, l.name.clone());
     }
 }

@@ -88,7 +88,8 @@ pub fn read(bytes: &[u8], name: impl AsRef<Path>) -> Result<Drawing> {
 /// harness counts: `None` for every file now (a DWG is read straight into the drawing).
 pub(crate) fn read_source(bytes: &[u8], name: &Path) -> Result<(Drawing, Option<Vec<u8>>)> {
     if cadcraft_dwg::is_dwg(bytes) {
-        let (d, _) = cadcraft_dwg::read(bytes, cadcraft_dwg::Limits::DEFAULT).map_err(dwg_error)?;
+        let (mut d, _) = cadcraft_dwg::read(bytes, cadcraft_dwg::Limits::DEFAULT).map_err(dwg_error)?;
+        dwg_kept::complete(&mut d, bytes)?;
         return Ok((d, None));
     }
     let d = match (Format::from_path(name), ext(name).as_str()) {
@@ -148,8 +149,18 @@ pub fn write_noted(d: &Drawing, name: impl AsRef<Path>, opts: &SaveOptions) -> R
 /// into the document of the DWG it was read from, so what CADCraft doesn't model goes back out.
 fn write_dwg(d: &Drawing, version: Version) -> Result<(Vec<u8>, Unwritten)> {
     let with_blocks = dxf_write::with_dim_blocks(d);
-    cadcraft_dwg::write(with_blocks.as_ref().unwrap_or(d), version.code()).map_err(dwg_error)
+    let d = with_blocks.as_ref().unwrap_or(d);
+    if d.foreign.dwg_source.is_some() {
+        return cadcraft_dwg::write(d, version.code()).map_err(dwg_error);
+    }
+    // No DWG to write into: the document starts as what CADCraft's DXF writer gives of the
+    // drawing (its objects, styles, tables, multileaders… as acadrust reads them), and the
+    // drawing's entities and tables are then written into it directly.
+    let seed = dwg_kept::seed(d, version)?;
+    cadcraft_dwg::write_seeded(d, seed, version.code()).map_err(dwg_error)
 }
+
+mod dwg_kept;
 
 /// Like [`write`], but image formats (PNG, SVG, PDF) show `window` (a model-space rectangle in
 /// drawing units, centred and scaled to fit the image without distortion) instead of the

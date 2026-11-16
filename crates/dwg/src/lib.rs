@@ -50,6 +50,7 @@ mod conv;
 mod entity_read;
 mod entity_write;
 mod header;
+mod objects;
 mod read;
 mod tables;
 mod write;
@@ -125,7 +126,7 @@ pub fn read_here(bytes: &[u8], limits: Limits) -> Result<(Drawing, Vec<String>),
         .chain(d.blocks.values().map(|b| &b.entities))
         .flat_map(|s| s.iter())
         .filter(|e| matches!(e.kind, cadcraft_doc::EntityKind::Unknown(_)))
-        .map(|e| e.handle)
+        .map(|e| (e.handle, (**e).clone()))
         .collect();
     let mut foreign = (*d.foreign).clone();
     foreign.dwg_source =
@@ -161,4 +162,42 @@ fn writable(version: &str) -> Result<acadrust::DxfVersion, String> {
         "AC1032" => V::AC1032,
         other => return Err(format!("DWG version `{other}` can't be written (CADCraft writes AC1015 to AC1032)")),
     })
+}
+
+/// acadrust, for callers that hand [`write_seeded`] a document of their own.
+pub use acadrust;
+
+/// [`write`] into `seed`, a document a caller made for a drawing with no DWG source (CADCraft's
+/// DXF writer gives it everything the drawing holds besides what this crate writes itself).
+pub fn write_seeded(d: &Drawing, seed: acadrust::CadDocument, version: &str) -> Result<(Vec<u8>, Unwritten), String> {
+    let v = writable(version)?;
+    guarded("the DWG writer failed on this drawing", || write::write_into(d, seed, v))?
+}
+
+/// The objects of the DWG a drawing was read from that CADCraft keeps without modelling them
+/// (dictionaries, other programs' objects, dynamic block data, xdata), with the entities that
+/// carry or use them (block references, viewports, images and the kinds read as unmodelled), as
+/// DXF: what a DXF reader keeps of a file, derived from the DWG when it is wanted (a DXF save of
+/// the drawing, dynamic blocks). The rest of the entities are left out, so it stays small.
+pub fn kept_dxf(source: &[u8]) -> Result<Vec<u8>, String> {
+    guarded("the DWG reader failed on this file", || -> Result<Vec<u8>, String> {
+        let (mut doc, _) = read::decode(source, Limits::DEFAULT)?;
+        let names = entity_read::Names::of(&doc);
+        let keep = |e: &acadrust::EntityType| {
+            use acadrust::EntityType as T;
+            matches!(e, T::Insert(_) | T::Viewport(_) | T::RasterImage(_) | T::Block(_) | T::BlockEnd(_) | T::MultiLeader(_) | T::Helix(_))
+                || entity_read::entity(e, &names).is_some_and(|x| matches!(x.kind, cadcraft_doc::EntityKind::Unknown(_)))
+        };
+        let drop: Vec<acadrust::types::Handle> = doc.entities().filter(|e| !keep(e)).map(|e| e.common().handle).collect();
+        let gone: std::collections::HashSet<u64> = drop.iter().map(|x| x.value()).collect();
+        for x in drop {
+            doc.remove_entity_arc(x);
+        }
+        for b in doc.block_records.iter_mut() {
+            b.entity_handles.retain(|x| !gone.contains(&x.value()));
+        }
+        let mut out = Vec::new();
+        acadrust::DxfWriter::new(&doc).write_to_writer(&mut out).map_err(|e| format!("DWG: {e}"))?;
+        Ok(out)
+    })?
 }

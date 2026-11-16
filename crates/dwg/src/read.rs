@@ -208,6 +208,7 @@ pub fn drawing(doc: &CadDocument, version: &str) -> Drawing {
     }
     dim_associations(doc, &mut d);
     draw_order(doc, &mut d);
+    crate::objects::read_groups(doc, &mut d);
     d
 }
 
@@ -347,7 +348,7 @@ fn view_tables(doc: &CadDocument, d: &mut Drawing) {
 }
 
 /// A layout's page setup, as the DXF reader takes its plot settings.
-fn page_setup(l: &acadrust::objects::Layout) -> PageSetup {
+pub(crate) fn page_setup(l: &acadrust::objects::Layout) -> PageSetup {
     let mut p = PageSetup::default();
     let mm = |v: f64, d: f64| if v.is_finite() && (0.0..=100_000.0).contains(&v) { v } else { d };
     let (w, h) = (mm(l.paper_width, 0.0), mm(l.paper_height, 0.0));

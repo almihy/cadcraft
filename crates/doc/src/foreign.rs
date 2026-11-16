@@ -56,15 +56,16 @@ impl ForeignExtra {
 pub struct DwgSource {
     /// The file's bytes.
     pub bytes: std::sync::Arc<[u8]>,
-    /// The file's entities CADCraft keeps as [`crate::EntityKind::Unknown`]: saving as DWG writes
-    /// them back as the file had them (a copy made in CADCraft, with another handle, can't be).
-    pub kept: std::sync::Arc<BTreeSet<Handle>>,
+    /// The file's entities of kinds the DWG writer doesn't write itself (unmodelled ones,
+    /// tables, multilines…), as they were read: while one is unchanged, saving as DWG writes it
+    /// back as the file had it (a changed one, or a copy with another handle, can't be).
+    pub kept: std::sync::Arc<BTreeMap<Handle, crate::Entity>>,
 }
 
 impl DwgSource {
-    /// Whether a DWG save writes the unmodelled entity `h` back.
-    pub fn keeps(&self, h: Handle) -> bool {
-        self.kept.contains(&h)
+    /// Whether a DWG save writes `e` back: it is one of [`DwgSource::kept`], unchanged.
+    pub fn keeps(&self, e: &crate::Entity) -> bool {
+        self.kept.get(&e.handle) == Some(e)
     }
 }
 

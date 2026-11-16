@@ -828,7 +828,7 @@ pub fn not_saved_as(d: &Drawing, version: Version) -> std::collections::BTreeMap
     for e in stores.flat_map(|s| s.iter()) {
         if let cadcraft_doc::EntityKind::Unknown(u) = &e.kind {
             // An object of the DWG the drawing was read from goes back out as the file had it.
-            if d.foreign.dwg_source.as_ref().is_some_and(|s| s.keeps(e.handle)) {
+            if d.foreign.dwg_source.as_ref().is_some_and(|s| s.keeps(e)) {
                 continue;
             }
             // A DWG before 2013 writes a solid's SAT text as it is; from 2013 the geometry has to be
@@ -850,7 +850,9 @@ pub fn not_saved_as(d: &Drawing, version: Version) -> std::collections::BTreeMap
     }
     // Another program's proxy objects (in the OBJECTS section) follow the same rule as its proxy
     // entities: the DWG writer leaves them out before 2013, or when their class can't be named.
-    for o in d.foreign.objects.iter().filter(|o| o.kind.eq_ignore_ascii_case("ACAD_PROXY_OBJECT")) {
+    // A drawing read from a DWG writes that file's objects back as they are.
+    let objects = if d.foreign.dwg_source.is_some() { &[][..] } else { &d.foreign.objects[..] };
+    for o in objects.iter().filter(|o| o.kind.eq_ignore_ascii_case("ACAD_PROXY_OBJECT")) {
         if version < Version::R2013 || d.foreign.proxy_class(&o.tags).is_none() {
             let n = out.entry("ACAD_PROXY_OBJECT".to_string()).or_insert(0);
             *n = n.saturating_add(1);
