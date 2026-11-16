@@ -60,6 +60,17 @@ pub struct DwgSource {
     /// tables, multilines…), as they were read: while one is unchanged, saving as DWG writes it
     /// back as the file had it (a changed one, or a copy with another handle, can't be).
     pub kept: std::sync::Arc<BTreeMap<Handle, crate::Entity>>,
+    /// What the drawing kept of the file's objects as it was read: saving as DWG writes into the
+    /// file's document only what the drawing changed of them since.
+    pub as_read: std::sync::Arc<ForeignRead>,
+}
+
+/// The kept objects and the extras of entities and records of a drawing as read from a DWG.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ForeignRead {
+    pub objects: Vec<ForeignObject>,
+    pub entities: BTreeMap<Handle, ForeignExtra>,
+    pub records: BTreeMap<ForeignKey, ForeignExtra>,
 }
 
 impl DwgSource {

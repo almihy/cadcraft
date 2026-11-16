@@ -798,3 +798,40 @@ fn a_dynamic_block_with_handles_above_2_pow_48_is_kept() {
     let again = read_dxf(write_dxf(&d).as_bytes()).unwrap();
     assert_eq!(by_node(dynamic_block(&again, "Door").unwrap()), by_node(before));
 }
+
+/// Dynamic block editing on a drawing read from a DWG: the references' new values, their new
+/// anonymous blocks and the links between them go into the DWG saved, and read back the same.
+#[cfg(not(any(target_arch = "wasm32", all(target_os = "freebsd", target_arch = "aarch64"))))]
+#[test]
+fn a_dwg_drawing_keeps_its_dynamic_block_edits_through_a_dwg_save() {
+    let from_dxf = read_dxf(with_references().as_bytes()).unwrap();
+    let mut d = cadcraft_io::read(&cadcraft_io::write(&from_dxf, "x.dwg").unwrap(), "x.dwg").unwrap();
+    assert!(d.foreign.dwg_source.is_some());
+    let (def, p) = props(&d, "80");
+    assert_eq!((def.as_str(), p[0].1.as_str()), ("Door", "Open"), "read from the DWG");
+    cadcraft_doc::dynblock::set_property(&mut d, h("80"), "Visibility1", "Closed").unwrap();
+    cadcraft_doc::dynblock::set_property(&mut d, h("81"), "Visibility1", "Open").unwrap();
+    // The same edits made on the drawing read from the DXF.
+    let mut x = from_dxf.clone();
+    cadcraft_doc::dynblock::set_property(&mut x, h("80"), "Visibility1", "Closed").unwrap();
+    cadcraft_doc::dynblock::set_property(&mut x, h("81"), "Visibility1", "Open").unwrap();
+    for _ in 0..2 {
+        d = cadcraft_io::read(&cadcraft_io::write(&d, "x.dwg").unwrap(), "x.dwg").unwrap();
+        let (def, p) = props(&d, "80");
+        assert_eq!((def.as_str(), p[0].1.as_str()), ("Door", "Closed"));
+        assert_eq!(props(&d, "81").1[0].1, "Open");
+        assert_eq!(props(&d, "81").1[1].1, "60.0000", "its other values stay");
+        let shown: Vec<bool> = d.block(&block_of(&d, "80")).unwrap().entities.iter().map(|e| e.common.visible).collect();
+        assert_eq!(shown, [true, false, false]);
+        // A DXF save of it holds them too.
+        let as_dxf = read_dxf(write_dxf(&d).as_bytes()).unwrap();
+        for r in ["80", "81", "82"] {
+            assert_eq!(props(&as_dxf, r), props(&x, r), "DXF {r}");
+        }
+        // Every reference shows what it shows after the same edits on the DXF's drawing.
+        for r in ["80", "81", "82"] {
+            assert_eq!(props(&d, r), props(&x, r), "{r}");
+            assert_eq!(cadcraft_doc::dynblock::grips(&d, h(r)), cadcraft_doc::dynblock::grips(&x, h(r)), "{r}");
+        }
+    }
+}

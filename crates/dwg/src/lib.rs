@@ -187,8 +187,16 @@ fn attach_source(d: &mut Drawing, bytes: &[u8]) {
         .map(|e| (e.handle, (**e).clone()))
         .collect();
     let mut foreign = (*d.foreign).clone();
-    foreign.dwg_source =
-        Some(cadcraft_doc::foreign::DwgSource { bytes: std::sync::Arc::from(bytes), kept: std::sync::Arc::new(kept) });
+    let as_read = cadcraft_doc::foreign::ForeignRead {
+        objects: foreign.objects.clone(),
+        entities: foreign.entities.clone(),
+        records: foreign.records.clone(),
+    };
+    foreign.dwg_source = Some(cadcraft_doc::foreign::DwgSource {
+        bytes: std::sync::Arc::from(bytes),
+        kept: std::sync::Arc::new(kept),
+        as_read: std::sync::Arc::new(as_read),
+    });
     d.foreign = std::sync::Arc::new(foreign);
 }
 

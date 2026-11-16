@@ -37,6 +37,7 @@ impl cadcraft_dwg::Extension for Own {
     }
 
     fn write(&self, d: &Drawing, doc: &mut CadDocument) {
+        crate::dwg_sync::write(d, doc);
         write_records(d, doc);
     }
 }
@@ -806,6 +807,43 @@ fn bridge_classes(doc: &mut CadDocument, dxf: &[Vec<Tag>]) {
 /// data, extension dictionaries and reactors) and of its unmodelled entities, derived from the
 /// file's DWG through acadrust's DXF writer (`cadcraft_dwg::kept_dxf`). `None` for a drawing not
 /// read from a DWG, or one whose groups are already there.
+/// `into` (the file's kept data, for a DXF save) with what `now` (the drawing's) changed of
+/// `read` (the drawing's as read): objects added, changed or taken out, and the extras of
+/// entities and records.
+fn overlay_changes(into: &mut cadcraft_doc::foreign::Foreign, now: &cadcraft_doc::foreign::Foreign, read: &cadcraft_doc::foreign::ForeignRead) {
+    if now.objects == read.objects && now.entities == read.entities && now.records == read.records {
+        return;
+    }
+    let before: std::collections::HashMap<cadcraft_doc::Handle, &cadcraft_doc::foreign::ForeignObject> = read.objects.iter().map(|o| (o.handle, o)).collect();
+    let current: std::collections::HashSet<cadcraft_doc::Handle> = now.objects.iter().map(|o| o.handle).collect();
+    into.objects.retain(|o| current.contains(&o.handle) || !before.contains_key(&o.handle));
+    for o in &now.objects {
+        if before.get(&o.handle).copied() == Some(o) {
+            continue;
+        }
+        match into.objects.iter_mut().find(|x| x.handle == o.handle) {
+            Some(x) => *x = o.clone(),
+            None => into.objects.push(o.clone()),
+        }
+    }
+    for (h, x) in &now.entities {
+        if read.entities.get(h) != Some(x) {
+            into.entities.insert(*h, x.clone());
+        }
+    }
+    for h in read.entities.keys().filter(|h| !now.entities.contains_key(h)) {
+        into.entities.remove(h);
+    }
+    for (k, x) in &now.records {
+        if read.records.get(k) != Some(x) {
+            into.records.insert(k.clone(), x.clone());
+        }
+    }
+    for k in read.records.keys().filter(|k| !now.records.contains_key(*k)) {
+        into.records.remove(k);
+    }
+}
+
 /// Solid modeler kinds: the DWG reader keeps groups of their own of them, which the file's own
 /// DXF groups replace for a DXF save.
 const MODELER: [&str; 3] = ["3DSOLID", "REGION", "BODY"];
@@ -823,6 +861,11 @@ pub(crate) fn for_dxf(d: &Drawing) -> Result<Option<Drawing>> {
     // then has no order of its own.
     if foreign.class_order.is_empty() {
         foreign.class_order.clone_from(&d.foreign.class_order);
+    }
+    // What the drawing changed of the file's objects since it was read (a dynamic block
+    // reference's new values) goes over the file's.
+    if let Some(src) = &d.foreign.dwg_source {
+        overlay_changes(&mut foreign, &d.foreign, &src.as_read);
     }
     out.foreign = Arc::new(foreign);
     // The unmodelled entities' groups, as the DXF reader keeps them.
