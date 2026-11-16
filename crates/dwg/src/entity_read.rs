@@ -27,6 +27,8 @@ pub struct Names {
     pub styles: HashMap<u64, String>,
     /// Image definitions: file path and pixel size, by handle.
     pub images: HashMap<u64, (String, Vec2, u8)>,
+    /// Image definitions' names (their `ACAD_IMAGE_DICT` entries), by handle.
+    pub image_names: HashMap<u64, String>,
     /// Multileader styles, by handle.
     pub mleader_styles: HashMap<u64, String>,
     /// Table styles' names and data text heights, by handle.
@@ -45,6 +47,13 @@ impl Names {
     pub fn of(doc: &acadrust::CadDocument) -> Names {
         let mut n = Names::default();
         n.clips = crate::xclip::read(doc);
+        if let Some(dict) = crate::styles::named(doc, "ACAD_IMAGE_DICT")
+            && let Some(acadrust::objects::ObjectType::Dictionary(dc)) = doc.objects.get(&dict)
+        {
+            for (k, h) in &dc.entries {
+                n.image_names.insert(h.value(), k.clone());
+            }
+        }
         for (i, c) in doc.classes.iter().enumerate() {
             n.classes.entry(c.dxf_name.to_ascii_uppercase()).or_insert(500 + i32::try_from(i).unwrap_or(i32::MAX - 500));
         }
@@ -306,11 +315,9 @@ fn kind(e: &EntityType, names: &Names) -> Option<(Common, EntityKind)> {
         EntityType::RasterImage(img) => (common(&img.common, 0.0, z, false), EntityKind::Image(image(img, names))),
         EntityType::Wipeout(w) => {
             let (o, u, v) = (v3(w.insertion_point).xy(), v3(w.u_vector).xy(), v3(w.v_vector).xy());
-            let mut boundary: Vec<Vec2> = w.clip_boundary_vertices.iter().map(|q| o + u * (q.x + 0.5) + v * (0.5 - q.y)).collect();
-            // A polygon's closing vertex repeats its first.
-            if boundary.len() > 3 && boundary.first().zip(boundary.last()).is_some_and(|(a, b)| a.near(*b, 1e-12)) {
-                boundary.pop();
-            }
+            // The vertices as the file has them (a polygon's closing vertex, which repeats its first,
+            // included), as the DXF reader takes them.
+            let boundary: Vec<Vec2> = w.clip_boundary_vertices.iter().map(|q| o + u * (q.x + 0.5) + v * (0.5 - q.y)).collect();
             (common(&w.common, 0.0, z, false), EntityKind::Wipeout(Wipeout { boundary }))
         }
         EntityType::Table(t) => {
@@ -894,6 +901,7 @@ fn image(i: &ae::RasterImage, names: &Names) -> Image {
         v: v3(i.v_vector),
         size: v2(i.size),
         path: from_def.map(|d| d.0.clone()).filter(|p| !p.is_empty()).unwrap_or_else(|| i.file_path.clone()),
+        name: i.definition_handle.and_then(|d| names.image_names.get(&d.value()).cloned()).unwrap_or_default(),
         clip,
         clipping: i.clipping_enabled,
         display: u16::try_from(i.flags.bits()).unwrap_or(def.display),

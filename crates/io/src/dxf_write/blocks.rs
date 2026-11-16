@@ -249,7 +249,7 @@ pub(crate) fn table_block_entities(d: &Drawing, t: &Table, layer: &str) -> Vec<E
 }
 
 /// Our own geometry for an arrowhead block: unit size, tip at the origin, pointing along +X.
-pub(super) fn arrow_block_entities(kind: cadcraft_render::Arrowhead) -> Vec<Entity> {
+pub(crate) fn arrow_block_entities(kind: cadcraft_render::Arrowhead) -> Vec<Entity> {
     let g = cadcraft_render::arrowhead(kind, Vec2::ZERO, Vec2::X, 1.0);
     let c = Common { layer: "0".into(), color: Color::ByBlock, ..Common::default() };
     let mut out = Vec::new();

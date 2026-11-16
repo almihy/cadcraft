@@ -108,6 +108,7 @@ pub fn into_document(d: &Drawing, doc: &mut CadDocument) -> Unwritten {
     }
     doc.header.handle_seed = doc.header.handle_seed.max(next.get());
     crate::xclip::write(d, doc);
+    image_definitions(d, doc);
     register_apps(doc);
     crate::objects::write_layouts(d, doc);
     crate::objects::write_groups(d, doc);
@@ -126,6 +127,71 @@ pub fn into_document(d: &Drawing, doc: &mut CadDocument) -> Unwritten {
         }
     }
     unwritten
+}
+
+/// Each image's definition (an IMAGEDEF named in `ACAD_IMAGE_DICT`, with its reactor) for its
+/// file and name: the file's while it names that file, else one of that name, else a new one.
+fn image_definitions(d: &Drawing, doc: &mut CadDocument) {
+    use acadrust::objects::{ImageDefinition, ImageDefinitionReactor, ObjectType, ResolutionUnit};
+    let stores = std::iter::once(&d.model).chain(d.layouts.iter().map(|l| &l.entities)).chain(d.blocks.values().map(|b| &b.entities));
+    let images: Vec<(AHandle, cadcraft_doc::Image)> = stores
+        .flat_map(|s| s.iter())
+        .filter_map(|e| if let cadcraft_doc::EntityKind::Image(i) = &e.kind { Some((ah(e.handle), i.clone())) } else { None })
+        .filter(|(_, i)| !i.path.trim().is_empty())
+        .collect();
+    if images.is_empty() {
+        return;
+    }
+    let dict = crate::styles::named_dict(doc, "ACAD_IMAGE_DICT");
+    let entries = |doc: &CadDocument| match doc.objects.get(&dict) {
+        Some(ObjectType::Dictionary(dc)) => dc.entries.clone(),
+        _ => Vec::new(),
+    };
+    for (h, i) in images {
+        let Some(EntityType::RasterImage(img)) = doc.get_entity(h) else { continue };
+        let name = if i.name.trim().is_empty() {
+            std::path::Path::new(&i.path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "Image".into())
+        } else {
+            i.name.clone()
+        };
+        let current = img.definition_handle;
+        let named = entries(doc).into_iter().find(|(k, _)| k.eq_ignore_ascii_case(&name)).map(|(_, x)| x);
+        let ok = |x: AHandle| matches!(doc.objects.get(&x), Some(ObjectType::ImageDefinition(def)) if def.file_name == i.path);
+        if current.is_some_and(|c| Some(c) == named && ok(c)) {
+            continue;
+        }
+        let def = match named.filter(|x| ok(*x)) {
+            Some(x) => x,
+            None => {
+                let mut def = ImageDefinition::new(i.path.clone());
+                def.handle = doc.allocate_handle();
+                def.owner = dict;
+                def.size_in_pixels = (i.size.x.max(0.0) as u32, i.size.y.max(0.0) as u32);
+                def.pixel_size = (i.pixel_size.x, i.pixel_size.y);
+                def.resolution_unit = match i.resolution_units {
+                    2 => ResolutionUnit::Centimeters,
+                    5 => ResolutionUnit::Inches,
+                    _ => ResolutionUnit::None,
+                };
+                let x = def.handle;
+                doc.objects.insert(x, ObjectType::ImageDefinition(def));
+                if let Some(ObjectType::Dictionary(dc)) = doc.objects.get_mut(&dict) {
+                    dc.entries.retain(|(k, _)| !k.eq_ignore_ascii_case(&name));
+                    dc.add_entry(name.clone(), x);
+                }
+                x
+            }
+        };
+        let reactor = doc.allocate_handle();
+        let mut r = ImageDefinitionReactor::new(h);
+        r.handle = reactor;
+        doc.objects.insert(reactor, ObjectType::ImageDefinitionReactor(r));
+        if let Some(EntityType::RasterImage(img)) = doc.get_entity_mut(h) {
+            img.definition_handle = Some(def);
+            img.definition_reactor_handle = Some(reactor);
+            img.common.raw_record = None;
+        }
+    }
 }
 
 /// Every application whose extended data the document holds registered in its APPID table: a

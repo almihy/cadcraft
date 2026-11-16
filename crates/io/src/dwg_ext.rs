@@ -229,6 +229,7 @@ fn prepare(d: &Drawing, legacy: bool) -> Cow<'_, Drawing> {
     let committed = d.committed();
     let base: &Drawing = &committed;
     let mut changes: Vec<(cadcraft_doc::Handle, Vec<RawTag>)> = Vec::new();
+    let arrows = missing_arrows(base);
     let mut regions = false;
     let mut mleaders = false;
     for e in all(base) {
@@ -253,7 +254,7 @@ fn prepare(d: &Drawing, legacy: bool) -> Cow<'_, Drawing> {
         x.extend(own.iter().map(|t| RawTag { code: t.code, value: t.str() }));
         changes.push((e.handle, x));
     }
-    if changes.is_empty() && !regions && !mleaders && matches!(committed, Cow::Borrowed(_)) {
+    if changes.is_empty() && !regions && !mleaders && arrows.is_empty() && matches!(committed, Cow::Borrowed(_)) {
         return Cow::Borrowed(d);
     }
     let mut out = committed.into_owned();
@@ -269,7 +270,42 @@ fn prepare(d: &Drawing, legacy: bool) -> Cow<'_, Drawing> {
     if mleaders {
         mleaders_as_leaders(&mut out);
     }
+    for (name, kind) in arrows {
+        let mut b = cadcraft_doc::Block::new(&name);
+        for mut e in crate::dxf_write::arrow_block_entities(kind) {
+            e.handle = out.new_handle();
+            b.entities.push(e);
+        }
+        out.blocks.insert(name, Arc::new(b));
+    }
     Cow::Owned(out)
+}
+
+/// The standard arrowhead blocks the drawing's dimension styles and dimensions name that it has
+/// no block of: CADCraft's geometry of them, as its DXF writer adds them.
+fn missing_arrows(d: &Drawing) -> Vec<(String, cadcraft_render::Arrowhead)> {
+    let mut names: Vec<String> = Vec::new();
+    for s in &d.dim_styles {
+        names.extend([s.arrow_block.clone(), s.arrow_block1.clone(), s.arrow_block2.clone(), s.leader_arrow_block.clone()]);
+    }
+    for e in all(d) {
+        if let EntityKind::Dimension(dm) = &e.kind {
+            for (k, v) in &dm.overrides {
+                let Some(f) = cadcraft_doc::DimStyle::field_name(k).filter(|f| f.starts_with("arrowBlock") || *f == "leaderArrowBlock") else { continue };
+                if let Some(s) = dxf_ext::canonical(f, v).as_ref().and_then(|v| v.as_str()) {
+                    names.push(s.to_string());
+                }
+            }
+        }
+    }
+    let mut out: Vec<(String, cadcraft_render::Arrowhead)> = Vec::new();
+    for n in names {
+        let Some((bname, kind)) = dxf_ext::arrow_block_name(&n) else { continue };
+        if d.block(&bname).is_none() && !out.iter().any(|(x, _)| x.eq_ignore_ascii_case(&bname)) {
+            out.push((bname, kind));
+        }
+    }
+    out
 }
 
 /// Every multileader as leaders (one per arm, ending at the landing) and its text or block, the

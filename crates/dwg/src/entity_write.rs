@@ -361,6 +361,7 @@ pub fn build(e: &Entity, prev: Option<&EntityType>, cx: &mut Cx) -> Option<Entit
             x.fade = i.fade;
             x.clip_boundary.vertices = i.clip.iter().map(|p| a2(*p)).collect();
             x.clip_boundary.clip_type = if i.clip.len() == 2 { ae::ClipType::Rectangular } else { ae::ClipType::Polygonal };
+            x.flags = ae::ImageDisplayFlags::from_bits_truncate(i16::try_from(i.display).unwrap_or(i16::MAX));
             if x.definition_handle.is_none() {
                 x.file_path.clone_from(&i.path);
             }
@@ -750,7 +751,10 @@ fn put_wipeout(x: &mut ae::Wipeout, boundary: &[Vec2]) {
     x.clip_type = ae::WipeoutClipType::Polygonal;
     x.clipping_enabled = true;
     let mut pts: Vec<Vector2> = boundary.iter().map(|p| Vector2::new((p.x - b.min.x) / w - 0.5, 0.5 - (p.y - b.min.y) / h)).collect();
-    if let Some(first) = pts.first().copied() {
+    // A polygon's closing vertex repeats its first (a boundary read from a file has it already).
+    if let (Some(first), Some(last)) = (pts.first().copied(), pts.last().copied())
+        && (pts.len() < 2 || (first.x - last.x).abs() > 1e-12 || (first.y - last.y).abs() > 1e-12)
+    {
         pts.push(first);
     }
     x.clip_boundary_vertices = pts;

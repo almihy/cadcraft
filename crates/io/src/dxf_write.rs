@@ -29,7 +29,7 @@ mod sections;
 
 #[cfg(test)]
 pub(crate) use assoc::polyline_vertex_ref;
-pub(crate) use blocks::is_generated_arrow;
+pub(crate) use blocks::{arrow_block_entities, is_generated_arrow};
 #[cfg(test)]
 pub(crate) use blocks::table_block_entities;
 use ctx::Ctx;
