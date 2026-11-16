@@ -13,7 +13,6 @@ cadcraft-geom = { workspace = true }
 cadcraft-color = { workspace = true }
 cadcraft-doc = { workspace = true }
 craft-dxf = { workspace = true }
-craft-dwg = { workspace = true }
 craft-svg = { workspace = true }
 craft-image-codecs = { workspace = true }
 cadcraft-render = { workspace = true }
@@ -23,6 +22,12 @@ serde_json = { workspace = true }
 serde = { workspace = true }
 craft-pdf = { workspace = true, features = ["write"] }
 
+# DWG files: multithreaded decoding where there are threads.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+cadcraft-dwg = { workspace = true, features = ["parallel"] }
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+cadcraft-dwg = { workspace = true }
+
 [dev-dependencies]
 miniz_oxide = "0.9"
 tiff = "0.11"
@@ -31,7 +36,5 @@ tiny-skia = { workspace = true }
 # Reads plotted PDFs back.
 craft-pdf = { workspace = true, features = ["read"] }
 
-# Inspect DWG output only where craft-dwg builds its native bridge. An unconditional
-# dev-dependency also builds acadrust during --all-targets, breaking FreeBSD aarch64 (#2526).
-[target.'cfg(not(any(target_arch = "wasm32", all(target_os = "freebsd", target_arch = "aarch64"))))'.dev-dependencies]
-acadrust = "0.6.6"
+# Inspects written DWGs in tests.
+acadrust = { workspace = true }

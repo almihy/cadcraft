@@ -1,4 +1,5 @@
-use super::common::{T, common, ocs, plan_of_tilted, run_points, tilted};
+use super::common::{T, common, ocs};
+use cadcraft_doc::ocs::{plan_of_tilted, run_points, tilted};
 use super::hatch::hatch;
 use super::mtext_dxf;
 use super::text::{attdef, attrib_modes, attrib_props, mtext_from, multiline_attrib, split_embedded, text_from};

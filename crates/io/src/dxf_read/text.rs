@@ -1,4 +1,5 @@
-use super::common::{T, common, ocs_n};
+use super::common::{T, common};
+use cadcraft_doc::ocs::{mirror_text, to_wcs};
 use super::{Attrib, AttribModes, AttribProps, Common, HAlign, MText, MultilineAttrib, Tag, Text, VAlign, Vec2, Vec3, mtext_dxf};
 
 /// The properties an ATTRIB carries itself: those it has groups for. Its layer counts only when
@@ -122,39 +123,9 @@ pub(super) fn text_from(t: &T) -> Text {
     };
     let n = Vec3::new(t.fd(210, 0.0), t.fd(220, 0.0), t.fd(230, 1.0));
     if n.z < 0.0 {
-        mirror_text(&mut text, align.map(|a| ocs_n(n, a)), ocs_n(n, t.p(10)));
+        mirror_text(&mut text, align.map(|a| to_wcs(n, a)), to_wcs(n, t.p(10)));
     }
     text
-}
-
-/// TEXT / ATTRIB / ATTDEF with extrusion (0,0,-1): the points are OCS and the text runs from its
-/// insertion point towards -x in the WCS, with mirrored glyphs. CADCraft draws text readable
-/// (MIRRTEXT = 0), so it keeps the mirrored footprint: the direction turns to -rotation and
-/// left/right justification swap ends (start ↔ end point).
-fn mirror_text(t: &mut Text, align: Option<Vec3>, insert: Vec3) {
-    t.rotation = cadcraft_geom::norm_angle(-t.rotation);
-    let baseline_left = |t: &Text, p: Vec3| if t.valign == VAlign::Baseline { None } else { Some(p) };
-    match t.halign {
-        HAlign::Left => {
-            // TL/ML/BL are placed by their alignment point, baseline-left text by its start point.
-            t.halign = HAlign::Right;
-            t.insert = insert;
-            t.align_pt = Some(if t.valign == VAlign::Baseline { insert } else { align.unwrap_or(insert) });
-        }
-        HAlign::Right => {
-            t.halign = HAlign::Left;
-            t.insert = align.unwrap_or(insert);
-            t.align_pt = baseline_left(t, t.insert);
-        }
-        HAlign::Aligned | HAlign::Fit => {
-            t.insert = align.unwrap_or(insert);
-            t.align_pt = Some(insert);
-        }
-        HAlign::Center | HAlign::Middle => {
-            t.insert = insert;
-            t.align_pt = align;
-        }
-    }
 }
 
 /// An ATTDEF, whose multiline text is embedded MTEXT after its own groups.

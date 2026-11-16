@@ -1,0 +1,25 @@
+[package]
+name = "cadcraft-dwg"
+description = "CADCraft DWG files: read straight into a cadcraft-doc Drawing and written back with acadrust"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# acadrust's multithreaded decoding (rayon). Native apps turn it on; WebAssembly builds leave it off.
+parallel = ["acadrust/parallel"]
+
+[dependencies]
+cadcraft-doc = { workspace = true }
+cadcraft-geom = { workspace = true }
+cadcraft-color = { workspace = true }
+acadrust = { workspace = true }
+serde_json = { workspace = true }
+cadcraft-fonts = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

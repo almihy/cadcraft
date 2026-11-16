@@ -50,6 +50,23 @@ impl ForeignExtra {
     }
 }
 
+/// The bytes of a DWG file a drawing was read from. Shared, never copied: undo snapshots and
+/// copies of the drawing hold the same bytes. Two are equal when they are the same bytes.
+#[derive(Clone)]
+pub struct DwgSource(pub std::sync::Arc<[u8]>);
+
+impl PartialEq for DwgSource {
+    fn eq(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl std::fmt::Debug for DwgSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "DwgSource({} bytes)", self.0.len())
+    }
+}
+
 /// Everything of a file CADCraft keeps without modelling it.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Foreign {
@@ -77,6 +94,10 @@ pub struct Foreign {
     /// surfaces, which from 2013 on those entities don't carry themselves: each `ACDSRECORD`
     /// names its entity with a 320 handle (see [`Foreign::data_store_entities`]).
     pub data_store: Vec<RawTag>,
+    /// The DWG file the drawing was read from, kept whole: saving as DWG reads it again and
+    /// writes the drawing's state into it, so what CADCraft doesn't model goes back out as it
+    /// came in (see `cadcraft-dwg`). `None` for a drawing not read from a DWG.
+    pub dwg_source: Option<DwgSource>,
     /// The `$ACADVER` of the file all this was read from: its groups are in that version's form.
     /// The drawing's own `$ACADVER` is the version it is saved as, which SAVEAS changes, so a
     /// later save must not take it for this one (#2471).
