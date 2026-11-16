@@ -155,6 +155,7 @@ fn write_dwg(d: &Drawing, version: Version) -> Result<(Vec<u8>, Unwritten)> {
 }
 
 mod dwg_ext;
+mod dwg_dynblock;
 mod dwg_foreign;
 
 /// Like [`write`], but image formats (PNG, SVG, PDF) show `window` (a model-space rectangle in

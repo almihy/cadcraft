@@ -5,8 +5,8 @@
 //! parsed); which of them a drawing keeps, and the roles of the handles they name, are decided by
 //! the same code that decides it for a DXF file (`dxf_raw::read`).
 //!
-//! Objects acadrust holds in its own typed form (materials, visual styles, dynamic block data,
-//! render settings…) stay in the DWG the drawing was read from and are written back from it;
+//! Dynamic block data comes as the groups of its records too (`dwg_dynblock`). Other objects
+//! acadrust holds in its own typed form (materials, visual styles, render settings…) stay in the DWG the drawing was read from and are written back from it;
 //! their groups are derived only for a DXF save of the drawing (`dwg_ext::for_dxf`).
 
 use cadcraft_doc::Drawing;
@@ -97,6 +97,18 @@ pub(crate) fn unescape(s: &str) -> String {
 /// The groups of an object of a kind made here: its type and its groups, `None` for any other.
 fn object(doc: &CadDocument, h: AHandle, o: &ObjectType, legacy: bool) -> Option<(String, Vec<Tag>)> {
     let text = |s: &str| if legacy { unescape(s) } else { s.to_string() };
+    let dynamic = match o {
+        ObjectType::DynamicBlock(x) => Some(crate::dwg_dynblock::object(x)),
+        ObjectType::BlockVisibilityParameter(x) => Some(Some(crate::dwg_dynblock::visibility(x))),
+        _ => None,
+    };
+    if let Some(found) = dynamic {
+        let (kind, mut t) = found?;
+        if let Some(x) = doc.object_xdata(h) {
+            t.extend(cadcraft_dwg::xdata_groups(x).into_iter().map(|r| Tag::s(r.code, r.value)));
+        }
+        return Some((kind, t));
+    }
     let mut t = vec![Tag::s(5, hx(h))];
     let kind = match o {
         ObjectType::Dictionary(d) => {
