@@ -119,7 +119,7 @@ pub trait Extension {
     fn read(&self, _doc: &acadrust::CadDocument, _d: &mut Drawing) {}
     /// The drawing to write for `d`: `d` itself, or a copy in the form this crate writes (e.g.
     /// with the program's own kinds as standard entities carrying its extended data).
-    fn prepare<'a>(&self, d: &'a Drawing) -> std::borrow::Cow<'a, Drawing> {
+    fn prepare<'a>(&self, d: &'a Drawing, _version: acadrust::DxfVersion) -> std::borrow::Cow<'a, Drawing> {
         std::borrow::Cow::Borrowed(d)
     }
     /// The document a drawing with no DWG source is written into, when the program holds data of
@@ -222,6 +222,12 @@ fn writable(version: &str) -> Result<acadrust::DxfVersion, String> {
 
 /// acadrust, for [`Extension`]s.
 pub use acadrust;
+
+/// DXF extended data groups (`1001` application name, then its values) as acadrust's, for
+/// [`Extension`]s that write a program's own records.
+pub fn xdata_from_groups(tags: &[cadcraft_doc::RawTag]) -> acadrust::xdata::ExtendedData {
+    conv::xdata_from_tags(tags)
+}
 
 /// Extended data as DXF groups (`1001` application name, then its values), for [`Extension`]s
 /// that read the extended data of a program's own records.

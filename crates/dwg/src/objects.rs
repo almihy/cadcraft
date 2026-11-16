@@ -370,3 +370,69 @@ pub fn variable_dictionary(doc: &mut CadDocument) {
         r.add_entry("AcDbVariableDictionary", dict_h);
     }
 }
+
+/// The drawing's tiled viewport configurations as VPORT records (each tile one record of its
+/// configuration's name), where they differ from what the file holds. The `*Active`
+/// configuration's first record also holds the current view, snap and grid
+/// ([`write_active_vport`]), so it stays and only its tile is set.
+pub fn write_vport_configs(d: &Drawing, doc: &mut CadDocument) {
+    use cadcraft_doc::VportConfig;
+    let tile_of = |v: &at::VPort| {
+        let twist = cadcraft_geom::norm_angle(v.view_twist);
+        let center = Vec2::new(v.view_center.x, v.view_center.y).rotate(-twist) + v3(v.view_target).xy();
+        (Vec2::new(v.lower_left.x, v.lower_left.y), Vec2::new(v.upper_right.x, v.upper_right.y), center, v.view_height, v.aspect_ratio, twist)
+    };
+    let same = |a: &cadcraft_doc::VportTile, b: &(Vec2, Vec2, Vec2, f64, f64, f64)| {
+        a.min.near(b.0, 1e-9) && a.max.near(b.1, 1e-9) && a.center.near(b.2, 1e-9) && (a.height - b.3).abs() <= 1e-9 && (a.twist - b.5).abs() <= 1e-9
+    };
+    let put = |x: &mut at::VPort, t: &cadcraft_doc::VportTile| {
+        x.lower_left = Vector2::new(t.min.x, t.min.y);
+        x.upper_right = Vector2::new(t.max.x, t.max.y);
+        let dcs = (t.center - v3(x.view_target).xy()).rotate(t.twist);
+        x.view_center = Vector2::new(dcs.x, dcs.y);
+        x.view_height = t.height;
+        if t.aspect > 0.0 {
+            x.aspect_ratio = t.aspect;
+        }
+        x.view_twist = t.twist;
+    };
+    for c in &d.vports {
+        let active = c.name.eq_ignore_ascii_case(VportConfig::ACTIVE);
+        let records: Vec<(Vec2, Vec2, Vec2, f64, f64, f64)> = doc.vports.iter().filter(|v| v.name.trim().eq_ignore_ascii_case(&c.name)).map(tile_of).collect();
+        if records.len() == c.tiles.len() && c.tiles.iter().zip(&records).all(|(a, b)| same(a, b)) {
+            continue;
+        }
+        // The records of this configuration, the active one's first kept.
+        let mut kept: Option<at::VPort> = None;
+        let mut rest: Vec<at::VPort> = Vec::new();
+        let all: Vec<at::VPort> = doc.vports.iter().cloned().collect();
+        doc.vports.clear();
+        for v in all {
+            if v.name.trim().eq_ignore_ascii_case(&c.name) {
+                if active && kept.is_none() {
+                    kept = Some(v);
+                }
+            } else {
+                rest.push(v);
+            }
+        }
+        let mut mine = Vec::new();
+        for (i, t) in c.tiles.iter().enumerate() {
+            let mut x = match (i, kept.take()) {
+                (0, Some(k)) => k,
+                _ => {
+                    let mut x = at::VPort::new(&c.name);
+                    x.handle = doc.allocate_handle();
+                    x
+                }
+            };
+            put(&mut x, t);
+            mine.push(x);
+        }
+        // `*Active` first, as AutoCAD lists it.
+        let list = if active { mine.into_iter().chain(rest).collect::<Vec<_>>() } else { rest.into_iter().chain(mine).collect() };
+        for v in list {
+            doc.vports.add_allow_duplicate(v);
+        }
+    }
+}

@@ -18,7 +18,7 @@ use crate::tables::{self as tb, Lookups};
 use crate::{Limits, Unwritten};
 
 pub fn write(d: &Drawing, v: DxfVersion, ext: &dyn crate::Extension) -> Result<(Vec<u8>, Unwritten), String> {
-    let d = ext.prepare(d);
+    let d = ext.prepare(d, v);
     let d = d.as_ref();
     let (mut doc, mut unwritten) = match &d.foreign.dwg_source {
         Some(src) => (crate::read::decode(&src.bytes, Limits::DEFAULT)?.0, Unwritten::new()),
@@ -108,9 +108,11 @@ pub fn into_document(d: &Drawing, doc: &mut CadDocument) -> Unwritten {
     }
     doc.header.handle_seed = doc.header.handle_seed.max(next.get());
     crate::xclip::write(d, doc);
+    register_apps(doc);
     crate::objects::write_layouts(d, doc);
     crate::objects::write_groups(d, doc);
     crate::objects::write_views(d, doc);
+    crate::objects::write_vport_configs(d, doc);
     crate::objects::write_active_vport(d, doc);
     crate::objects::variable_dictionary(doc);
     for l in &d.layouts {
@@ -124,6 +126,36 @@ pub fn into_document(d: &Drawing, doc: &mut CadDocument) -> Unwritten {
         }
     }
     unwritten
+}
+
+/// Every application whose extended data the document holds registered in its APPID table: a
+/// DWG reader drops extended data of an application the table doesn't name.
+fn register_apps(doc: &mut CadDocument) {
+    let mut names: Vec<String> = Vec::new();
+    let mut seen = HashSet::new();
+    let mut add = |n: &str| {
+        if !n.trim().is_empty() && seen.insert(up(n)) {
+            names.push(n.to_string());
+        }
+    };
+    for e in doc.entities() {
+        for r in e.common().extended_data.records() {
+            add(&r.application_name);
+        }
+    }
+    for x in doc.object_xdata.values() {
+        for r in x.records() {
+            add(&r.application_name);
+        }
+    }
+    for n in names {
+        if doc.app_ids.iter().any(|a| a.name.eq_ignore_ascii_case(&n)) {
+            continue;
+        }
+        let mut a = at::AppId::new(n);
+        a.handle = doc.allocate_handle();
+        let _ = doc.app_ids.add(a);
+    }
 }
 
 /// The block record of the layout `name`, made if the document has no such layout.

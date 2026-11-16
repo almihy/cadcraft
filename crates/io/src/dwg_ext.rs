@@ -23,8 +23,8 @@ impl cadcraft_dwg::Extension for Own {
         read_payloads(doc, d);
     }
 
-    fn prepare<'a>(&self, d: &'a Drawing) -> Cow<'a, Drawing> {
-        prepare(d)
+    fn prepare<'a>(&self, d: &'a Drawing, version: cadcraft_dwg::acadrust::DxfVersion) -> Cow<'a, Drawing> {
+        prepare(d, version < cadcraft_dwg::acadrust::DxfVersion::AC1021)
     }
 
     fn document(&self, d: &Drawing, version: cadcraft_dwg::acadrust::DxfVersion) -> std::result::Result<Option<(CadDocument, crate::Unwritten)>, String> {
@@ -83,6 +83,19 @@ fn read_records(doc: &CadDocument, d: &mut Drawing) {
     }
     if let Some(tables) = record_text(doc, dxf_ext::PLOT_STYLES_KEY).and_then(|t| dxf_ext::parse_plot_styles(&t)) {
         d.plot_style_tables = tables;
+    }
+    // Layouts' saved paper-space views.
+    for o in doc.objects.values() {
+        let ObjectType::Layout(l) = o else { continue };
+        let Some(x) = doc.object_xdata(l.handle) else { continue };
+        let tags = own_tags(x);
+        let list = dxf_ext::xdata_list(dxf_ext::xdata(&tags, dxf_ext::APP), "PSVIEW");
+        let g = |c: i32| list.iter().find(|t| t.code == c).map(Tag::f64).filter(|v| v.is_finite());
+        if let (Some(x), Some(y), Some(h)) = (g(1010), g(1020), g(1040))
+            && let Some(lay) = d.layouts.iter_mut().find(|x| x.name.eq_ignore_ascii_case(&l.name))
+        {
+            lay.view = Some((cadcraft_geom::Vec2::new(x, y), h));
+        }
     }
     // Table styles' complete cell styles, block arrays and annotative blocks.
     for o in doc.objects.values() {
@@ -210,12 +223,16 @@ fn without_list(x: &[Tag], name: &str) -> Vec<Tag> {
 
 /// The drawing to write as DWG: regions as the closed polylines CADCraft writes them as, and each
 /// entity's CADCraft extended data (as its DXF writer writes it) among its extended data.
-fn prepare(d: &Drawing) -> Cow<'_, Drawing> {
+/// With `legacy` (a DWG before 2007, which has no multileaders), multileaders as leaders and their
+/// text or block, as the DXF writer writes them for those versions.
+fn prepare(d: &Drawing, legacy: bool) -> Cow<'_, Drawing> {
     let committed = d.committed();
     let base: &Drawing = &committed;
     let mut changes: Vec<(cadcraft_doc::Handle, Vec<RawTag>)> = Vec::new();
     let mut regions = false;
+    let mut mleaders = false;
     for e in all(base) {
+        mleaders |= legacy && matches!(e.kind, EntityKind::MLeader(_));
         if matches!(e.kind, EntityKind::Region(_)) {
             regions = true;
             continue;
@@ -236,7 +253,7 @@ fn prepare(d: &Drawing) -> Cow<'_, Drawing> {
         x.extend(own.iter().map(|t| RawTag { code: t.code, value: t.str() }));
         changes.push((e.handle, x));
     }
-    if changes.is_empty() && !regions && matches!(committed, Cow::Borrowed(_)) {
+    if changes.is_empty() && !regions && !mleaders && matches!(committed, Cow::Borrowed(_)) {
         return Cow::Borrowed(d);
     }
     let mut out = committed.into_owned();
@@ -249,7 +266,62 @@ fn prepare(d: &Drawing) -> Cow<'_, Drawing> {
     if regions {
         regions_as_polylines(&mut out);
     }
+    if mleaders {
+        mleaders_as_leaders(&mut out);
+    }
     Cow::Owned(out)
+}
+
+/// Every multileader as leaders (one per arm, ending at the landing) and its text or block, the
+/// first keeping the multileader's handle.
+fn mleaders_as_leaders(d: &mut Drawing) {
+    let style = d.header.str("DIMSTYLE", "Standard");
+    let mut next = d.handseed.max(1);
+    let mut alloc = || {
+        let h = cadcraft_doc::Handle(next);
+        next += 1;
+        h
+    };
+    let mut one = |store: &mut cadcraft_doc::EntityStore| {
+        let found: Vec<cadcraft_doc::Entity> = store.iter().filter(|e| matches!(e.kind, EntityKind::MLeader(_))).map(|e| (**e).clone()).collect();
+        for e in found {
+            let EntityKind::MLeader(m) = &e.kind else { continue };
+            let mut parts: Vec<EntityKind> = m
+                .leaders
+                .iter()
+                .take(64)
+                .map(|arm| {
+                    let mut vertices = arm.clone();
+                    vertices.push(m.landing);
+                    EntityKind::Leader(cadcraft_doc::Leader { vertices, arrow: true, spline: m.spline, style: style.clone() })
+                })
+                .collect();
+            parts.extend(m.text.clone().map(EntityKind::MText));
+            parts.extend(m.block.clone().map(EntityKind::Insert));
+            let mut parts = parts.into_iter();
+            match parts.next() {
+                Some(first) => {
+                    store.modify(e.handle, |x| x.kind = first);
+                }
+                None => {
+                    store.remove(e.handle);
+                }
+            }
+            for k in parts {
+                store.push(cadcraft_doc::Entity { handle: alloc(), common: e.common.clone(), kind: k });
+            }
+        }
+    };
+    one(&mut d.model);
+    for l in &mut d.layouts {
+        one(&mut l.entities);
+    }
+    for b in d.blocks.values_mut() {
+        if b.entities.iter().any(|e| matches!(e.kind, EntityKind::MLeader(_))) {
+            one(&mut Arc::make_mut(b).entities);
+        }
+    }
+    d.handseed = d.handseed.max(next);
 }
 
 /// `xdata` without application `app`'s groups.
@@ -324,6 +396,28 @@ fn write_records(d: &Drawing, doc: &mut CadDocument) {
     }
     if let Some(chunks) = dxf_ext::anno_chunks(d) {
         records.push((dxf_ext::ANNOTATION_KEY, chunks));
+    }
+    // Layouts' saved paper-space views.
+    let layouts: Vec<(cadcraft_dwg::acadrust::types::Handle, String)> =
+        doc.objects.values().filter_map(|o| if let ObjectType::Layout(l) = o { Some((l.handle, l.name.clone())) } else { None }).collect();
+    for (h, name) in layouts {
+        let view = d.layouts.iter().find(|l| l.name.eq_ignore_ascii_case(&name)).and_then(|l| l.view).filter(|(c, v)| c.x.is_finite() && c.y.is_finite() && v.is_finite());
+        let tags: Vec<RawTag> = match view {
+            Some((c, height)) => [(1001, dxf_ext::APP.to_string()), (1000, "PSVIEW".into()), (1002, "{".into()), (1010, format!("{:?}", c.x)), (1020, format!("{:?}", c.y)), (1030, "0.0".into()), (1040, format!("{height:?}")), (1002, "}".into())]
+                .into_iter()
+                .map(|(code, value)| RawTag { code, value })
+                .collect(),
+            None => Vec::new(),
+        };
+        let have = doc.object_xdata(h).map(own_tags).unwrap_or_default();
+        let want: Vec<Tag> = tags.iter().map(|t| Tag::s(t.code, t.value.clone())).collect();
+        if have.iter().map(|t| (t.code, t.str())).eq(want.iter().map(|t| (t.code, t.str()))) {
+            continue;
+        }
+        doc.remove_object_xdata_record(h, dxf_ext::APP);
+        if let Some(r) = cadcraft_dwg::xdata_from_groups(&tags).records().first() {
+            doc.set_object_xdata_record(h, r.clone());
+        }
     }
     let root = doc.header.named_objects_dict_handle;
     let keys = [
