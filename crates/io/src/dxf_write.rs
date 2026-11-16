@@ -31,7 +31,6 @@ mod sections;
 pub(crate) use assoc::polyline_vertex_ref;
 pub(crate) use blocks::{arrow_block_entities, is_generated_arrow};
 pub(crate) use common::text_insert;
-#[cfg(test)]
 pub(crate) use blocks::table_block_entities;
 use ctx::Ctx;
 use entity::entity;

@@ -24,6 +24,8 @@ pub struct Cx<'a> {
     pub mline_styles: &'a HashMap<String, AHandle>,
     pub table_styles: &'a HashMap<String, AHandle>,
     pub mleader_styles: &'a HashMap<String, AHandle>,
+    /// Tables written from the drawing (new or changed): their blocks are drawn again.
+    pub tables: Vec<AHandle>,
 }
 
 /// The handle of the style `name` in `map` (upper-case names), Standard's when it has none.

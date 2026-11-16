@@ -130,8 +130,13 @@ pub fn drawing(doc: &CadDocument, version: &str) -> Drawing {
             layout_records.insert(l.block_record.value(), ());
         }
     }
+    // A table's block draws it: the table is the drawing's, its block is made again from it.
+    let table_blocks = crate::write::table_block_records(doc);
     for br in doc.block_records.iter() {
         let space = br.is_model_space() || br.is_paper_space() || layout_records.contains_key(&br.handle.value());
+        if table_blocks.contains(&br.handle.value()) {
+            continue;
+        }
         if space || br.name.is_empty() {
             continue;
         }

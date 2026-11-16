@@ -32,6 +32,10 @@ impl cadcraft_dwg::Extension for Own {
         foreign_document(d, version)
     }
 
+    fn table_block(&self, d: &Drawing, t: &cadcraft_doc::Table, layer: &str) -> Vec<cadcraft_doc::Entity> {
+        crate::dxf_write::table_block_entities(d, t, layer)
+    }
+
     fn write(&self, d: &Drawing, doc: &mut CadDocument) {
         write_records(d, doc);
     }

@@ -25,7 +25,7 @@ pub fn write(d: &Drawing, v: DxfVersion, ext: &dyn crate::Extension) -> Result<(
         None => ext.document(d, v)?.unwrap_or_default(),
     };
     doc.version = v;
-    for (kind, n) in into_document(d, &mut doc) {
+    for (kind, n) in into_document(d, &mut doc, ext) {
         *unwritten.entry(kind).or_default() += n;
     }
     ext.write(d, &mut doc);
@@ -37,7 +37,7 @@ pub fn write(d: &Drawing, v: DxfVersion, ext: &dyn crate::Extension) -> Result<(
 }
 
 /// Write the drawing's state into `doc`, returning what it couldn't write.
-pub fn into_document(d: &Drawing, doc: &mut CadDocument) -> Unwritten {
+pub fn into_document(d: &Drawing, doc: &mut CadDocument, ext: &dyn crate::Extension) -> Unwritten {
     let mut unwritten = Unwritten::new();
     doc.header.handle_seed = doc.header.handle_seed.max(d.handseed);
     crate::header::write(&d.header, &mut doc.header);
@@ -91,6 +91,7 @@ pub fn into_document(d: &Drawing, doc: &mut CadDocument) -> Unwritten {
             mline_styles: &mline_styles,
             table_styles: &table_styles,
             mleader_styles: &mleader_styles,
+            tables: Vec::new(),
         };
         // Block definitions (an xref's objects come from its file), model space, layouts.
         for b in d.blocks.values().filter(|b| b.xref_path.is_none()) {
@@ -106,6 +107,8 @@ pub fn into_document(d: &Drawing, doc: &mut CadDocument) -> Unwritten {
             let Some(br) = layout_record(doc, &l.name) else { continue };
             container(doc, br, &l.entities, (&names, d.foreign.dwg_source.as_ref()), &mut cx, &mut unwritten);
         }
+        let tables = std::mem::take(&mut cx.tables);
+        table_blocks(d, doc, &tables, ext, &mut cx);
     }
     doc.header.handle_seed = doc.header.handle_seed.max(next.get());
     crate::xclip::write(d, doc);
@@ -193,6 +196,91 @@ fn image_definitions(d: &Drawing, doc: &mut CadDocument) {
             img.common.raw_record = None;
         }
     }
+}
+
+/// The anonymous block (`*T…`) of each table written from the drawing, drawn by the program
+/// ([`crate::Extension::table_block`]): the table's own block made again, or a new one.
+fn table_blocks(d: &Drawing, doc: &mut CadDocument, tables: &[AHandle], ext: &dyn crate::Extension, cx: &mut Cx) {
+    for h in tables {
+        let Some(e) = d.entity(cadcraft_doc::Handle(h.value())).or_else(|| d.blocks.values().find_map(|b| b.entities.get(cadcraft_doc::Handle(h.value())))) else {
+            continue;
+        };
+        let cadcraft_doc::EntityKind::Table(t) = &e.kind else { continue };
+        let parts = ext.table_block(d, t, &e.common.layer);
+        if parts.is_empty() {
+            continue;
+        }
+        let own = match doc.get_entity(*h) {
+            Some(EntityType::Table(x)) => x.block_record_handle.filter(|br| doc.block_records.iter().any(|b| b.handle == *br)),
+            _ => continue,
+        };
+        let br = match own {
+            Some(br) => {
+                let old: Vec<AHandle> = doc.block_records.iter().find(|b| b.handle == br).map(|b| b.entity_handles.clone()).unwrap_or_default();
+                for x in old {
+                    doc.remove_entity(x);
+                }
+                br
+            }
+            None => {
+                let mut n = 1;
+                while doc.block_records.iter().any(|b| b.name.eq_ignore_ascii_case(&format!("*T{n}"))) {
+                    n += 1;
+                }
+                let Some(br) = new_block_record(doc, &format!("*T{n}")) else { continue };
+                br
+            }
+        };
+        let mut handles = Vec::new();
+        for mut part in parts {
+            part.handle = cadcraft_doc::Handle((cx.alloc)().value());
+            if let Some(mut x) = build(&part, None, cx) {
+                x.common_mut().owner_handle = br;
+                if let Ok(added) = doc.add_entity(x) {
+                    handles.push(added);
+                }
+            }
+        }
+        if let Some(r) = doc.block_records.iter_mut().find(|b| b.handle == br) {
+            r.entity_handles = handles;
+        }
+        let name = doc.block_records.iter().find(|b| b.handle == br).map(|b| b.name.clone()).unwrap_or_default();
+        if let Some(EntityType::Table(x)) = doc.get_entity_mut(*h) {
+            x.block_record_handle = Some(br);
+            x.block_name = name;
+            x.common.raw_record = None;
+        }
+    }
+}
+
+/// The block records of the document's tables (each table's `*T` block).
+pub fn table_block_records(doc: &CadDocument) -> HashSet<u64> {
+    doc.entities()
+        .filter_map(|e| match e {
+            EntityType::Table(t) => t.block_record_handle.map(|h| h.value()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A new anonymous block record `name` with its BLOCK and ENDBLK markers.
+fn new_block_record(doc: &mut CadDocument, name: &str) -> Option<AHandle> {
+    let mut record = BlockRecord::new(name);
+    record.handle = doc.allocate_handle();
+    record.block_entity_handle = doc.allocate_handle();
+    record.block_end_handle = doc.allocate_handle();
+    record.flags.anonymous = true;
+    let (rh, mh, eh) = (record.handle, record.block_entity_handle, record.block_end_handle);
+    doc.block_records.add(record).ok()?;
+    let mut marker = acadrust::entities::Block::new(name, acadrust::types::Vector3::default());
+    marker.common.handle = mh;
+    marker.common.owner_handle = rh;
+    let _ = doc.add_entity(EntityType::Block(marker));
+    let mut end = acadrust::entities::BlockEnd::new();
+    end.common.handle = eh;
+    end.common.owner_handle = rh;
+    let _ = doc.add_entity(EntityType::BlockEnd(end));
+    Some(rh)
 }
 
 /// Every application whose extended data the document holds registered in its APPID table: a
@@ -297,6 +385,9 @@ fn container(
                 let p = p.clone();
                 match build(e, Some(&p), cx) {
                     Some(new) => {
+                        if matches!(new, EntityType::Table(_)) {
+                            cx.tables.push(h);
+                        }
                         if let Some(slot) = doc.get_entity_mut(h) {
                             *slot = new;
                         }
@@ -316,8 +407,12 @@ fn container(
                 match build(e, None, cx) {
                     Some(mut new) => {
                         new.common_mut().owner_handle = br;
+                        let table = matches!(new, EntityType::Table(_));
                         if doc.add_entity(new).is_ok() {
                             order.push(h);
+                            if table {
+                                cx.tables.push(h);
+                            }
                         }
                     }
                     None => *unwritten.entry(e.kind.dxf_name().trim().to_ascii_uppercase()).or_default() += 1,
@@ -498,7 +593,8 @@ fn blocks(d: &Drawing, doc: &mut CadDocument) {
         .values()
         .filter_map(|o| if let acadrust::objects::ObjectType::Layout(l) = o { Some(l.block_record.value()) } else { None })
         .collect();
-    let is_space = |b: &BlockRecord| b.is_model_space() || b.is_paper_space() || layouts.contains(&b.handle.value());
+    let tables = table_block_records(doc);
+    let is_space = |b: &BlockRecord| b.is_model_space() || b.is_paper_space() || layouts.contains(&b.handle.value()) || tables.contains(&b.handle.value());
     let keep: HashSet<String> = d.blocks.keys().map(|n| up(n)).collect();
     let gone: Vec<(String, Vec<AHandle>)> = doc
         .block_records

@@ -128,6 +128,11 @@ pub trait Extension {
     fn document(&self, _d: &Drawing, _version: acadrust::DxfVersion) -> Result<Option<(acadrust::CadDocument, Unwritten)>, String> {
         Ok(None)
     }
+    /// The entities of the anonymous block that draws table `t` (on layer `layer`), which a DWG
+    /// keeps with the table: its cells' fills, borders and texts. Empty: none is written.
+    fn table_block(&self, _d: &Drawing, _t: &cadcraft_doc::Table, _layer: &str) -> Vec<cadcraft_doc::Entity> {
+        Vec::new()
+    }
     /// Called once the drawing's state is in the document, before it is written.
     fn write(&self, _d: &Drawing, _doc: &mut acadrust::CadDocument) {}
 }
