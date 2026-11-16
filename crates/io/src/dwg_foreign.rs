@@ -53,8 +53,50 @@ fn hex(b: &[u8]) -> Vec<String> {
     b.chunks(127).map(|c| c.iter().map(|x| format!("{x:02X}")).collect()).collect()
 }
 
+/// A string of a DWG before 2007, whose characters outside its code page are `\U+XXXX` escapes
+/// (one UTF-16 unit each; a character above U+FFFF is a surrogate pair of them), with the
+/// escapes decoded as the DXF reader decodes them. Malformed escapes stay as they are.
+fn unescape(s: &str) -> String {
+    if !s.contains("\\U+") {
+        return s.to_string();
+    }
+    let chars: Vec<char> = s.chars().collect();
+    let unit = |i: usize| -> Option<u16> {
+        if chars.get(i) != Some(&'\\') || chars.get(i + 1) != Some(&'U') || chars.get(i + 2) != Some(&'+') {
+            return None;
+        }
+        let hex: String = chars.get(i + 3..i + 7)?.iter().collect();
+        u16::from_str_radix(&hex, 16).ok()
+    };
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if let Some(u) = unit(i) {
+            if (0xD800..0xDC00).contains(&u)
+                && let Some(l) = unit(i + 7).filter(|l| (0xDC00..0xE000).contains(l))
+                && let Some(c) = char::decode_utf16([u, l]).next().and_then(Result::ok)
+            {
+                out.push(c);
+                i += 14;
+                continue;
+            }
+            if let Some(c) = char::from_u32(u32::from(u)) {
+                out.push(c);
+                i += 7;
+                continue;
+            }
+        }
+        if let Some(c) = chars.get(i) {
+            out.push(*c);
+        }
+        i += 1;
+    }
+    out
+}
+
 /// The groups of an object of a kind made here: its type and its groups, `None` for any other.
-fn object(doc: &CadDocument, h: AHandle, o: &ObjectType) -> Option<(String, Vec<Tag>)> {
+fn object(doc: &CadDocument, h: AHandle, o: &ObjectType, legacy: bool) -> Option<(String, Vec<Tag>)> {
+    let text = |s: &str| if legacy { unescape(s) } else { s.to_string() };
     let mut t = vec![Tag::s(5, hx(h))];
     let kind = match o {
         ObjectType::Dictionary(d) => {
@@ -95,7 +137,7 @@ fn object(doc: &CadDocument, h: AHandle, o: &ObjectType) -> Option<(String, Vec<
             t.push(Tag::i(280, i64::from(x.cloning_flags as i16)));
             for e in &x.entries {
                 match &e.value {
-                    XRecordValue::String(s) => t.push(Tag::s(e.code, s.clone())),
+                    XRecordValue::String(s) => t.push(Tag::s(e.code, text(s))),
                     XRecordValue::Double(v) => t.push(Tag::s(e.code, f(*v))),
                     XRecordValue::Int16(v) => t.push(Tag::i(e.code, i64::from(*v))),
                     XRecordValue::Int32(v) => t.push(Tag::i(e.code, i64::from(*v))),
@@ -117,7 +159,7 @@ fn object(doc: &CadDocument, h: AHandle, o: &ObjectType) -> Option<(String, Vec<
             t.push(Tag::s(330, hx(v.owner_handle)));
             t.push(Tag::s(100, "DictionaryVariables"));
             t.push(Tag::i(280, i64::from(v.schema_number)));
-            t.push(Tag::s(1, v.value.clone()));
+            t.push(Tag::s(1, text(&v.value)));
             "DICTIONARYVAR"
         }
         ObjectType::ProxyObject(p) => {
@@ -146,6 +188,7 @@ fn object(doc: &CadDocument, h: AHandle, o: &ObjectType) -> Option<(String, Vec<
 /// (by handle and name, with their extension dictionaries), the entities that have an extension
 /// dictionary or reactors, and the objects made here (the named object dictionary first).
 fn sections(doc: &CadDocument, version: &str) -> Vec<Section> {
+    let legacy = matches!(version, "AC1012" | "AC1014" | "AC1015" | "AC1018");
     let sec = |name: &str, tags: Vec<Tag>| Section { name: name.to_string(), tags };
     let header = vec![Tag::s(9, "$ACADVER"), Tag::s(1, version)];
     let mut classes = Vec::new();
@@ -218,7 +261,7 @@ fn sections(doc: &CadDocument, version: &str) -> Vec<Section> {
     handles.sort_by_key(|h| h.value());
     for h in std::iter::once(root).chain(handles) {
         let Some(o) = doc.objects.get(&h) else { continue };
-        if let Some((kind, t)) = object(doc, h, o) {
+        if let Some((kind, t)) = object(doc, h, o, legacy) {
             objects.push(Tag::s(0, kind));
             objects.extend(t);
         }

@@ -140,7 +140,10 @@ pub(crate) fn foreign_bridge(d: &Drawing, from: Version, dwg: Version) -> (Strin
             _ => {}
         }
     }
-    (craft_dxf::write_ascii(&tags), classes)
+    // UTF-8 from 2007 on, as the declared version has it: acadrust takes the escapes an older
+    // file writes other characters as literally in some names (class names).
+    let text = if from.utf8() { craft_dxf::write_ascii_as(&tags, true) } else { craft_dxf::write_ascii(&tags) };
+    (text, classes)
 }
 
 /// Proxy type names and lookup-parameter subclass names in the spelling acadrust's reader takes.

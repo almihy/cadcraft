@@ -3637,17 +3637,17 @@ fn a_proxy_left_out_of_the_dwg_is_counted_as_unwritten() {
     let d = read(&proxy_file(), "p.dxf").unwrap();
     let binary = write_with(&d, "p.dxf", &SaveOptions { version: Some(Version::R2018), binary: true }).unwrap();
     let (_, unwritten) = dwg_support::dxf_to_dwg_noted(&binary, "AC1032").unwrap();
-    // CADCraft's own save already left the stray proxy out; the binary DXF's other three go.
-    assert_eq!(unwritten, [("ACAD_PROXY_ENTITY".to_string(), 1), ("ACAD_PROXY_OBJECT".to_string(), 2)].into_iter().collect());
+    // CADCraft's own save already left the stray proxy out; the binary DXF's other three name
+    // their classes (CADCraft reads a binary DXF's CLASSES), so the DWG keeps them.
+    assert_eq!(unwritten, crate::Unwritten::new());
 }
 
-/// A binary DXF given to the DWG conversion directly: its CLASSES aren't read, so the proxies'
-/// numbers can't be mapped to the DWG's classes. Kept as they were, they named other classes
-/// (the ODA refuses such a file), so the DWG leaves them out, as a pre-2013 DWG does, and the
-/// rest of the drawing is written.
+/// A binary DXF given to the DWG conversion: CADCraft reads its CLASSES as it reads a text
+/// DXF's, so its proxies are numbered by their classes in the DWG, never by a number that names
+/// another class there (the ODA refuses such a file).
 #[cfg(not(any(target_arch = "wasm32", all(target_os = "freebsd", target_arch = "aarch64"))))]
 #[test]
-fn a_binary_dxf_leaves_its_proxies_out_of_the_dwg() {
+fn a_binary_dxf_keeps_its_proxies_classes_in_the_dwg() {
     use acadrust::entities::{EntityType, ExtendedEntityData};
     use acadrust::objects::ObjectType;
     let d = read(&proxy_file(), "p.dxf").unwrap();
@@ -3655,9 +3655,22 @@ fn a_binary_dxf_leaves_its_proxies_out_of_the_dwg() {
     assert!(binary.starts_with(b"AutoCAD Binary DXF"));
     let dwg = dwg_support::dxf_to_dwg_as(&binary, "AC1032").unwrap();
     let doc = acadrust::DwgReader::from_stream(std::io::Cursor::new(dwg)).read().unwrap();
-    let proxies = doc.objects.values().filter(|o| matches!(o, ObjectType::ProxyObject(_))).count()
-        + doc.entities().filter(|e| matches!(e, EntityType::Extended(x) if matches!(x.data, ExtendedEntityData::Proxy(_)))).count();
-    assert_eq!(proxies, 0, "no proxy with an unmapped class number");
+    let class_of = |id: i32| doc.classes.iter().find(|c| i32::from(c.class_number) == id).map(|c| c.dxf_name.clone());
+    let mut objects: Vec<Option<String>> =
+        doc.objects.values().filter_map(|o| if let ObjectType::ProxyObject(p) = o { Some(class_of(p.class_id)) } else { None }).collect();
+    objects.sort();
+    assert_eq!(objects, [Some("VISUALSTYLE".to_string()), Some("WIDGETX".to_string())], "proxy objects by their own classes");
+    let entities: Vec<Option<String>> = doc
+        .entities()
+        .filter_map(|e| match e {
+            EntityType::Extended(x) => match &x.data {
+                ExtendedEntityData::Proxy(p) => Some(class_of(p.class_id)),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
+    assert_eq!(entities, [Some("WIDGETX".to_string())], "the proxy entity by its own class");
     assert!(doc.layers.get("0").is_some(), "the drawing itself is written");
 }
 

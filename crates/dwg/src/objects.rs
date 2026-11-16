@@ -234,7 +234,11 @@ fn read_limits(l: &acadrust::objects::Layout) -> Option<(Vec2, Vec2)> {
 /// kept only as raw records of another version (or none). acadrust refuses the whole file for
 /// one of them; the rest of the drawing is written and the note says what was left out.
 pub fn drop_unwritable(doc: &mut CadDocument) -> Unwritten {
+    use acadrust::entities::ExtendedEntityData as X;
     let version = doc.version;
+    // Before 2013 acadrust writes no class for a proxy, whose class number would then name
+    // another class: proxies are left out.
+    let legacy = version < acadrust::DxfVersion::AC1027;
     let mut dropped = Unwritten::new();
     let mut count = |name: &str| *dropped.entry(name.trim().to_ascii_uppercase()).or_insert(0) += 1;
     let entities: Vec<AHandle> = doc
@@ -243,6 +247,10 @@ pub fn drop_unwritable(doc: &mut CadDocument) -> Unwritten {
             acadrust::EntityType::Unknown(u) if u.raw_dwg_data.is_none() || u.dwg_source_version.is_some_and(|v| v != version) => {
                 count(&u.dxf_name);
                 Some(u.common.handle)
+            }
+            acadrust::EntityType::Extended(x) if legacy && matches!(x.data, X::Proxy(_) | X::RegisteredClass(_)) => {
+                count("ACAD_PROXY_ENTITY");
+                Some(x.common.handle)
             }
             _ => None,
         })
@@ -266,11 +274,33 @@ pub fn drop_unwritable(doc: &mut CadDocument) -> Unwritten {
                 count(type_name);
                 Some(*hd)
             }
+            ObjectType::ProxyObject(_) if legacy => {
+                count("ACAD_PROXY_OBJECT");
+                Some(*hd)
+            }
             _ => None,
         })
         .collect();
     for hd in &objects {
         doc.objects.remove(hd);
+    }
+    if !objects.is_empty() {
+        let gone: std::collections::HashSet<AHandle> = objects.iter().copied().collect();
+        for o in doc.objects.values_mut() {
+            if let ObjectType::Dictionary(dc) = o {
+                dc.entries.retain(|(_, v)| !gone.contains(v));
+            }
+        }
+    }
+    // A class without a name or a C++ class name is no class of anything written; kept, it
+    // stops readers reading the file.
+    let bad = |c: &acadrust::classes::DxfClass| c.dxf_name.trim().is_empty() || c.cpp_class_name.trim().is_empty();
+    if doc.classes.iter().any(bad) {
+        let mut kept = acadrust::classes::DxfClassCollection::new();
+        for c in doc.classes.iter().filter(|c| !bad(c)) {
+            kept.add_or_update(c.clone());
+        }
+        doc.classes = kept;
     }
     dropped
 }
