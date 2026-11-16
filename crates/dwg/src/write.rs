@@ -22,7 +22,7 @@ pub fn write(d: &Drawing, v: DxfVersion, ext: &dyn crate::Extension) -> Result<(
     let d = d.as_ref();
     let mut doc = match &d.foreign.dwg_source {
         Some(src) => crate::read::decode(&src.bytes, Limits::DEFAULT)?.0,
-        None => CadDocument::new(),
+        None => ext.document(d, v)?.unwrap_or_default(),
     };
     doc.version = v;
     let mut unwritten = into_document(d, &mut doc);

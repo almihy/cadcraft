@@ -121,6 +121,11 @@ pub trait Extension {
     fn prepare<'a>(&self, d: &'a Drawing) -> std::borrow::Cow<'a, Drawing> {
         std::borrow::Cow::Borrowed(d)
     }
+    /// The document a drawing with no DWG source is written into, when the program holds data of
+    /// the drawing this crate can't translate (`None`: an empty document).
+    fn document(&self, _d: &Drawing, _version: acadrust::DxfVersion) -> Result<Option<acadrust::CadDocument>, String> {
+        Ok(None)
+    }
     /// Called once the drawing's state is in the document, before it is written.
     fn write(&self, _d: &Drawing, _doc: &mut acadrust::CadDocument) {}
 }
@@ -215,6 +220,12 @@ fn writable(version: &str) -> Result<acadrust::DxfVersion, String> {
 
 /// acadrust, for [`Extension`]s.
 pub use acadrust;
+
+/// Extended data as DXF groups (`1001` application name, then its values), for [`Extension`]s
+/// that read the extended data of a program's own records.
+pub fn xdata_groups(x: &acadrust::xdata::ExtendedData) -> Vec<cadcraft_doc::RawTag> {
+    conv::xdata_tags(x)
+}
 
 /// The objects of the DWG a drawing was read from that CADCraft keeps without modelling them
 /// (dictionaries, other programs' objects, dynamic block data, xdata), with the entities that

@@ -140,7 +140,12 @@ pub(crate) fn read_table_style(name: &str, tags: &[Tag]) -> TableStyle {
         }
         st.set_cell_style(cs);
     }
-    // Our own complete cell styles replace what the groups could say.
+    apply_cell_styles_xdata(st, tags)
+}
+
+/// A table style with CADCraft's complete cell styles from its xdata (`tags`), when it has them:
+/// they replace what the documented groups could say.
+pub(crate) fn apply_cell_styles_xdata(mut st: TableStyle, tags: &[Tag]) -> TableStyle {
     if let Some(p) = payload(tags, CELLSTYLES).and_then(|j| serde_json::from_str::<CellStylesPayload>(&j).ok()).filter(|p| p.v == 1) {
         st.cell_styles.clear();
         for cs in p.styles.into_iter().take(MAX_CELL_STYLES) {

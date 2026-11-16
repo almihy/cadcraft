@@ -120,6 +120,32 @@ pub fn tags(d: &Drawing, version: Version) -> Vec<Tag> {
     tags_for(d, version, version, version < Version::R2004)
 }
 
+/// The DXF of a drawing with other programs' data CADCraft keeps as DXF groups (read from a DXF
+/// file), for acadrust's DXF reader: the groups are declared as the version they were read in
+/// (`from`), and the entity types are the `dwg` version's (MULTILEADER from 2007).
+pub(crate) fn foreign_bridge(d: &Drawing, from: Version, dwg: Version) -> String {
+    let mut tags = tags_for(d, from, dwg, false);
+    bridge_markers(&mut tags);
+    craft_dxf::write_ascii(&tags)
+}
+
+/// Proxy type names and lookup-parameter subclass names in the spelling acadrust's reader takes.
+fn bridge_markers(tags: &mut [Tag]) {
+    for tag in tags.iter_mut().filter(|tag| tag.code == 0) {
+        for name in ["ACAD_PROXY_ENTITY", "ACAD_PROXY_OBJECT"] {
+            if tag.str().trim().eq_ignore_ascii_case(name) {
+                *tag = Tag::s(0, name);
+                break;
+            }
+        }
+    }
+    for t in tags.iter_mut().filter(|t| t.code == 100) {
+        if t.str().trim().eq_ignore_ascii_case("AcDbBlockLookupParameter") {
+            *t = Tag::s(100, "AcDbBlockLookupParameter");
+        }
+    }
+}
+
 /// One entity's DXF groups, as the writer stores them, without its `0` group: its type name
 /// and the groups of its record (an entity written as several records, a POLYLINE and its
 /// VERTEXes, gives its first). Handles of objects outside the entity (owner, styles) are left

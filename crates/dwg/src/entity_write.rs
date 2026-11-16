@@ -420,16 +420,20 @@ pub fn build(e: &Entity, prev: Option<&EntityType>, cx: &mut Cx) -> Option<Entit
         // CADCraft's own kind, written by its file layer as polylines (see `Extension::prepare`).
         EntityKind::Region(_) => return None,
     };
+    let dimension = matches!(out, EntityType::Dimension(_));
     let common = out.common_mut();
     if let Some(p) = prev {
         // The identity of the file's object: owner, extension dictionary, reactors, xdata.
         let pc = p.common();
         if common.handle != pc.handle {
+            let x = std::mem::take(&mut common.extended_data);
             *common = pc.clone();
+            if dimension {
+                common.extended_data = x;
+            }
         }
-    } else {
-        put_xdata(common, c);
     }
+    put_xdata(common, c, dimension);
     common.handle = ah(e.handle);
     common.raw_record = None;
     put_common(common, c);

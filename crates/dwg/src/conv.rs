@@ -268,9 +268,21 @@ pub fn put_common(dst: &mut EntityCommon, c: &Common) {
     dst.invisible = !c.visible;
 }
 
-/// The extended data of a new entity: the drawing's own groups (other applications').
-pub fn put_xdata(dst: &mut EntityCommon, c: &Common) {
-    if !c.xdata.is_empty() {
-        dst.extended_data = xdata_from_tags(&c.xdata);
+/// The extended data of an entity written from the drawing: the drawing's groups (other
+/// applications', and CADCraft's own, which its file layer puts there), with the records of the
+/// applications CADCraft reads into its model kept as the object had them (a dimension's `ACAD`
+/// record is its style overrides, written before this).
+pub fn put_xdata(dst: &mut EntityCommon, c: &Common, dimension: bool) {
+    let mut x = ExtendedData::new();
+    for r in dst.extended_data.records() {
+        let app = up(&r.application_name);
+        let own = OWN_APPS.contains(&app.as_str()) && app != "CADCRAFT";
+        if own || (dimension && app == "ACAD") {
+            x.add_record(r.clone());
+        }
     }
+    for r in xdata_from_tags(&c.xdata).records() {
+        x.upsert_record(r.clone());
+    }
+    dst.extended_data = x;
 }
