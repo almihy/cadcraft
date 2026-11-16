@@ -125,17 +125,29 @@ pub fn tags(d: &Drawing, version: Version) -> Vec<Tag> {
 /// (`from`), and the entity types are the `dwg` version's (MULTILEADER from 2007).
 /// Also returns the names of the classes its CLASSES section lists, in order (a proxy's class
 /// number is 500 plus its class's place there).
-pub(crate) fn foreign_bridge(d: &Drawing, from: Version, dwg: Version) -> (String, Vec<String>) {
+pub(crate) fn foreign_bridge(d: &Drawing, from: Version, dwg: Version) -> (String, Vec<Vec<Tag>>) {
     let mut tags = tags_for(d, from, dwg, false);
     bridge_markers(&mut tags);
-    let mut classes = Vec::new();
+    // The CLASS records, in their order (a proxy names its class by its place here).
+    let mut classes: Vec<Vec<Tag>> = Vec::new();
+    let mut in_classes = false;
     let mut in_class = false;
     for t in &tags {
         match t.code {
-            0 => in_class = t.str() == "CLASS",
-            1 if in_class => {
-                classes.push(t.str().trim().to_ascii_uppercase());
-                in_class = false;
+            0 => {
+                in_class = in_classes && t.str() == "CLASS";
+                if in_class {
+                    classes.push(Vec::new());
+                }
+                if t.str() == "ENDSEC" {
+                    in_classes = false;
+                }
+            }
+            2 if !in_class && t.str() == "CLASSES" => in_classes = true,
+            _ if in_class => {
+                if let Some(c) = classes.last_mut() {
+                    c.push(t.clone());
+                }
             }
             _ => {}
         }

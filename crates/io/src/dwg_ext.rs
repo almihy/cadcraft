@@ -709,21 +709,22 @@ fn unescape_records(doc: &mut CadDocument) {
 /// counted by the caller (entities where the drawing's entities are written).
 fn proxy_classes(
     doc: &mut CadDocument,
-    dxf_classes: &[String],
+    dxf_classes: &[Vec<Tag>],
     version: cadcraft_dwg::acadrust::DxfVersion,
     named: &dyn Fn(u64) -> bool,
     objects_named: bool,
 ) {
     use cadcraft_dwg::acadrust::entities::{EntityType, ExtendedEntityData};
     let legacy = version < cadcraft_dwg::acadrust::DxfVersion::AC1027;
-    let numbers: std::collections::HashMap<String, i32> =
-        doc.classes.iter().enumerate().map(|(i, c)| (c.dxf_name.to_ascii_uppercase(), 500 + i32::try_from(i).unwrap_or(i32::MAX - 500))).collect();
+    if !legacy {
+        bridge_classes(doc, dxf_classes);
+    }
+    // The classes are the bridge's, in its order: a proxy keeps the number it has.
     let renumber = |id: i32| -> Option<i32> {
         if legacy {
             return None;
         }
-        let name = usize::try_from(id - 500).ok().and_then(|i| dxf_classes.get(i))?;
-        numbers.get(name).copied()
+        usize::try_from(id - 500).ok().filter(|i| *i < dxf_classes.len()).map(|_| id)
     };
     let mut gone_entities = Vec::new();
     for e in doc.entities_mut() {
@@ -765,6 +766,41 @@ fn proxy_classes(
     }
 }
 
+/// The document's classes made the bridge's CLASS records (`dxf`), in their order and each one
+/// kept, two of one name too (acadrust's DXF reader keeps one class per name), numbered by their
+/// place as a DWG numbers them; then the classes acadrust added of its own.
+fn bridge_classes(doc: &mut CadDocument, dxf: &[Vec<Tag>]) {
+    use cadcraft_dwg::acadrust::classes::{DxfClass, DxfClassCollection, ProxyFlags};
+    if dxf.is_empty() {
+        return;
+    }
+    let text = |g: &[Tag], code: i32| g.iter().find(|t| t.code == code).map(|t| crate::dwg_foreign::unescape(t.str().trim())).unwrap_or_default();
+    let int = |g: &[Tag], code: i32| g.iter().find(|t| t.code == code).and_then(|t| t.str().trim().parse::<i64>().ok());
+    let mut out = DxfClassCollection::new();
+    let mut seen = std::collections::HashSet::new();
+    for (i, g) in dxf.iter().enumerate() {
+        let mut c = DxfClass::new(text(g, 1), text(g, 2));
+        c.application_name = text(g, 3);
+        c.proxy_flags = ProxyFlags::from(i32::try_from(int(g, 90).unwrap_or(0)).unwrap_or(0));
+        c.instance_count = i32::try_from(int(g, 91).unwrap_or(0)).unwrap_or(0);
+        c.was_zombie = int(g, 280).is_some_and(|v| v != 0);
+        c.is_an_entity = int(g, 281).is_some_and(|v| v != 0);
+        c.item_class_id = if c.is_an_entity { 498 } else { 499 };
+        c.class_number = i16::try_from(500 + i).unwrap_or(i16::MAX);
+        if let Some(own) = doc.classes.get_by_name(&c.dxf_name).filter(|x| x.cpp_class_name == c.cpp_class_name) {
+            (c.dwg_version, c.maintenance_version) = (own.dwg_version, own.maintenance_version);
+        }
+        seen.insert(c.dxf_name.to_uppercase());
+        out.push_preserving(c);
+    }
+    for c in doc.classes.iter().filter(|c| !seen.contains(&c.dxf_name.to_uppercase())) {
+        let mut c = c.clone();
+        c.class_number = i16::try_from(500 + out.len()).unwrap_or(i16::MAX);
+        out.push_preserving(c);
+    }
+    doc.classes = out;
+}
+
 /// A drawing read from a DWG, for a DXF save: with the DXF groups of the file's objects that
 /// CADCraft keeps without modelling them (dictionaries, other programs' objects, dynamic block
 /// data, extension dictionaries and reactors) and of its unmodelled entities, derived from the
@@ -782,6 +818,12 @@ pub(crate) fn for_dxf(d: &Drawing) -> Result<Option<Drawing>> {
     let mut foreign = (*k.foreign).clone();
     foreign.dwg_source.clone_from(&d.foreign.dwg_source);
     foreign.version.clone_from(&d.foreign.version);
+    // The reader's proxies name their class by the file's class order; the DXF of the kept
+    // objects may hold no proxy (acadrust writes a registered entity by its class name), and
+    // then has no order of its own.
+    if foreign.class_order.is_empty() {
+        foreign.class_order.clone_from(&d.foreign.class_order);
+    }
     out.foreign = Arc::new(foreign);
     // The unmodelled entities' groups, as the DXF reader keeps them.
     let take = |store: &mut cadcraft_doc::EntityStore, from: &cadcraft_doc::EntityStore| {

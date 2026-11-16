@@ -271,6 +271,8 @@ fn unicode_class_identity_survives_the_ascii_bridge() {
 }
 
 /// A malformed unused class must not silently collapse two otherwise valid class identities.
+/// The DWG keeps the classes by their place (a proxy names its class by it), two of one name
+/// too, so each proxy is written with its own class and none is ambiguous.
 #[test]
 fn ambiguous_fallback_classes_are_reported_without_losing_plain_geometry() {
     for escaped in [false, true] {
@@ -286,10 +288,28 @@ fn ambiguous_fallback_classes_are_reported_without_losing_plain_geometry() {
             source = source.replace("1\nCUSTOM\n2\nObject", "1\nOTHER\n2\nObject");
         }
         let (bytes, unwritten) = dwg_support::dxf_to_dwg_noted(source.as_bytes(), "AC1032").unwrap();
-        assert_eq!(unwritten.get("ACAD_PROXY_ENTITY"), Some(&2));
-        assert_eq!(unwritten.get("ACAD_PROXY_OBJECT"), if escaped { None } else { Some(&1) });
+        assert_eq!(unwritten.get("ACAD_PROXY_ENTITY"), None);
+        assert_eq!(unwritten.get("ACAD_PROXY_OBJECT"), None);
+        let decoded = acadrust::DwgReader::from_stream(Cursor::new(&bytes)).read().unwrap();
+        let cpp = |id: i32| decoded.classes.iter().nth(usize::try_from(id - 500).unwrap()).map(|c| c.cpp_class_name.clone());
+        let mut identities: Vec<_> = decoded
+            .entities()
+            .filter_map(|e| match e {
+                EntityType::Extended(x) => match &x.data {
+                    ExtendedEntityData::Proxy(p) => cpp(p.class_id),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .chain(decoded.objects.values().filter_map(|o| match o {
+                acadrust::objects::ObjectType::ProxyObject(p) => cpp(p.class_id),
+                _ => None,
+            }))
+            .collect();
+        identities.sort();
+        assert_eq!(identities, ["First", "Object", "Second"]);
         let drawing = cadcraft_io::read(&bytes, "copy.dwg").unwrap();
-        assert_eq!(drawing.entity_count(), 1);
-        assert!(drawing.model.iter().all(|e| matches!(e.kind, EntityKind::Line(_))));
+        assert_eq!(drawing.entity_count(), 3);
+        assert_eq!(drawing.model.iter().filter(|e| matches!(e.kind, EntityKind::Line(_))).count(), 1);
     }
 }

@@ -294,13 +294,65 @@ pub fn drop_unwritable(doc: &mut CadDocument) -> Unwritten {
     }
     // A class without a name or a C++ class name is no class of anything written; kept, it
     // stops readers reading the file.
+    // The others keep their order (two of one name too) and are numbered by their place again;
+    // proxies follow their class, and one whose class goes goes with it.
     let bad = |c: &acadrust::classes::DxfClass| c.dxf_name.trim().is_empty() || c.cpp_class_name.trim().is_empty();
     if doc.classes.iter().any(bad) {
         let mut kept = acadrust::classes::DxfClassCollection::new();
-        for c in doc.classes.iter().filter(|c| !bad(c)) {
-            kept.add_or_update(c.clone());
+        let mut moved: std::collections::HashMap<i32, i32> = std::collections::HashMap::new();
+        for (i, c) in doc.classes.iter().enumerate() {
+            if bad(c) {
+                continue;
+            }
+            let mut c = c.clone();
+            let n = 500 + i32::try_from(kept.len()).unwrap_or(i32::MAX - 500);
+            moved.insert(500 + i32::try_from(i).unwrap_or(i32::MAX - 500), n);
+            c.class_number = i16::try_from(n).unwrap_or(i16::MAX);
+            kept.push_preserving(c);
         }
         doc.classes = kept;
+        let mut gone_entities = Vec::new();
+        for e in doc.entities_mut() {
+            if let acadrust::EntityType::Extended(x) = e
+                && let X::Proxy(p) = &mut x.data
+            {
+                match moved.get(&p.class_id) {
+                    Some(n) => p.class_id = *n,
+                    None => gone_entities.push(x.common.handle),
+                }
+            }
+        }
+        for h in &gone_entities {
+            count("ACAD_PROXY_ENTITY");
+            doc.remove_entity(*h);
+        }
+        if !gone_entities.is_empty() {
+            for b in doc.block_records.iter_mut() {
+                b.entity_handles.retain(|x| !gone_entities.contains(x));
+            }
+        }
+        let mut gone = std::collections::HashSet::new();
+        for (h, o) in doc.objects.iter_mut() {
+            if let ObjectType::ProxyObject(p) = o {
+                match moved.get(&p.class_id) {
+                    Some(n) => p.class_id = *n,
+                    None => {
+                        gone.insert(*h);
+                    }
+                }
+            }
+        }
+        for h in &gone {
+            count("ACAD_PROXY_OBJECT");
+            doc.objects.remove(h);
+        }
+        if !gone.is_empty() {
+            for o in doc.objects.values_mut() {
+                if let ObjectType::Dictionary(dc) = o {
+                    dc.entries.retain(|(_, v)| !gone.contains(v));
+                }
+            }
+        }
     }
     dropped
 }
