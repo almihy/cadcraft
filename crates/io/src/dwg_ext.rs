@@ -233,8 +233,21 @@ fn prepare(d: &Drawing, legacy: bool) -> Cow<'_, Drawing> {
     let arrows = missing_arrows(base);
     let mut regions = false;
     let mut mleaders = false;
+    // Justified text: the file holds where its baseline starts, as the DXF writer works it out.
+    let mut starts: Vec<(cadcraft_doc::Handle, cadcraft_geom::Vec3)> = Vec::new();
     for e in all(base) {
         mleaders |= legacy && matches!(e.kind, EntityKind::MLeader(_));
+        let text = match &e.kind {
+            EntityKind::Text(t) => Some(t),
+            EntityKind::AttDef(a) => Some(&a.text),
+            _ => None,
+        };
+        if let Some(t) = text {
+            let at = crate::dxf_write::text_insert(base, t);
+            if at != t.insert {
+                starts.push((e.handle, at));
+            }
+        }
         if matches!(e.kind, EntityKind::Region(_)) {
             regions = true;
             continue;
@@ -255,7 +268,8 @@ fn prepare(d: &Drawing, legacy: bool) -> Cow<'_, Drawing> {
         x.extend(own.iter().map(|t| RawTag { code: t.code, value: t.str() }));
         changes.push((e.handle, x));
     }
-    if changes.is_empty() && !regions && !mleaders && arrows.is_empty() && matches!(committed, Cow::Borrowed(_)) {
+    let sheets = if base.foreign.dwg_source.is_none() { sheet_views(base) } else { Vec::new() };
+    if changes.is_empty() && starts.is_empty() && sheets.is_empty() && !regions && !mleaders && arrows.is_empty() && matches!(committed, Cow::Borrowed(_)) {
         return Cow::Borrowed(d);
     }
     let mut out = committed.into_owned();
@@ -265,11 +279,25 @@ fn prepare(d: &Drawing, legacy: bool) -> Cow<'_, Drawing> {
             e.common.xdata.extend(x);
         });
     }
+    for (h, at) in starts {
+        let _ = out.modify_entity(h, |e| match &mut e.kind {
+            EntityKind::Text(t) => t.insert = at,
+            EntityKind::AttDef(a) => a.text.insert = at,
+            _ => {}
+        });
+    }
     if regions {
         regions_as_polylines(&mut out);
     }
     if mleaders {
         mleaders_as_leaders(&mut out);
+    }
+    for (layout, vp) in sheets {
+        let h = out.new_handle();
+        if let Some(l) = out.layouts.iter_mut().find(|l| l.name == layout) {
+            l.entities.push(cadcraft_doc::Entity { handle: h, common: cadcraft_doc::Common::default(), kind: EntityKind::Viewport(vp) });
+            l.entities.send_to_back(h);
+        }
     }
     for (name, kind) in arrows {
         let mut b = cadcraft_doc::Block::new(&name);
@@ -280,6 +308,43 @@ fn prepare(d: &Drawing, legacy: bool) -> Cow<'_, Drawing> {
         out.blocks.insert(name, Arc::new(b));
     }
     Cow::Owned(out)
+}
+
+/// The paper-space viewport (id 1, the sheet itself) of each layout that has viewports of its
+/// own but no such viewport, as the DXF writer adds it: readers number a layout's viewports in
+/// order and take the first for the sheet. It is the whole sheet, viewed 1:1; the reader leaves
+/// it implicit again.
+fn sheet_views(d: &Drawing) -> Vec<(String, cadcraft_doc::Viewport)> {
+    let mut out = Vec::new();
+    for l in &d.layouts {
+        let vps = || l.entities.iter().filter_map(|e| if let EntityKind::Viewport(v) = &e.kind { Some(v) } else { None });
+        if vps().next().is_none() || vps().any(|v| v.id == 1) {
+            continue;
+        }
+        let paper = cadcraft_render::paper::sheet(d, &l.name).map(|s| s.size).unwrap_or(cadcraft_geom::Vec2::new(12.0, 9.0));
+        let s = l.page.scale;
+        let scale = if l.page.scale_to_fit || !(s.is_finite() && (1e-6..=1e6).contains(&s)) { 1.0 } else { s };
+        let size = paper / scale;
+        let center = size * 0.5;
+        out.push((
+            l.name.clone(),
+            cadcraft_doc::Viewport {
+                center: center.to3(0.0),
+                width: size.x,
+                height: size.y,
+                view_center: center,
+                view_height: size.y,
+                id: 1,
+                locked: false,
+                frozen_layers: Vec::new(),
+                layer_colors: Vec::new(),
+                clip: None,
+                on: true,
+                twist: 0.0,
+            },
+        ));
+    }
+    out
 }
 
 /// The standard arrowhead blocks the drawing's dimension styles and dimensions name that it has

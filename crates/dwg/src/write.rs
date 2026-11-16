@@ -237,7 +237,17 @@ fn layout_record(doc: &mut CadDocument, name: &str) -> Option<AHandle> {
         return Some(h);
     }
     doc.add_layout(name).ok()?;
-    find(doc)
+    let br = find(doc)?;
+    // The sheet's own viewport acadrust gives a new layout: the drawing gives the layout's
+    // viewports, that one included when it needs one.
+    let made: Vec<AHandle> = doc.block_records.iter().find(|b| b.handle == br).map(|b| b.entity_handles.clone()).unwrap_or_default();
+    for h in made {
+        doc.remove_entity(h);
+    }
+    if let Some(b) = doc.block_records.iter_mut().find(|b| b.handle == br) {
+        b.entity_handles.clear();
+    }
+    Some(br)
 }
 
 /// Whether the reader leaves `e` out of its container (block delimiters, a layout's overall

@@ -293,3 +293,143 @@ fn damaged_and_oversized_files_are_refused() {
     let _ = crate::read_here(&bytes[..bytes.len() / 3], crate::Limits::DEFAULT);
     assert!(crate::write(&drawing(), "AC1009").is_err());
 }
+
+/// The kinds translated natively beside the plain entities: a table (merged title, a cell's own
+/// height), a multiline in a style of its own, a multileader with text, a helix, a clipped block
+/// reference and an image, with table, multiline and multileader styles.
+fn styled_drawing() -> Drawing {
+    let mut d = Drawing::new_metric();
+    d.handseed = 0x1000;
+    d.table_styles.push(TableStyle { name: "Schedule".into(), text_height: 2.5, margin: 0.75, title: true, header: true, ..TableStyle::default() });
+    d.mline_styles.push(MLineStyle {
+        name: "Wall".into(),
+        description: "Two leaves".into(),
+        elements: vec![
+            MLineElement { offset: 1.5, color: Color::Index(1), linetype: "ByLayer".into() },
+            MLineElement { offset: -1.5, color: Color::Index(5), linetype: "ByLayer".into() },
+        ],
+        joints: true,
+        ..MLineStyle::default()
+    });
+    d.mleader_styles.push(MLeaderStyle { name: "Callout".into(), arrow_size: 3.0, text_height: 2.0, landing_gap: 0.5, dogleg: 4.0, ..MLeaderStyle::default() });
+    let mut chair = Block::new("CHAIR");
+    chair.entities.push(line(0x60));
+    d.blocks.insert("CHAIR".into(), std::sync::Arc::new(chair));
+    let cell = |t: &str| TableCell { text: t.into(), ..TableCell::default() };
+    let table = Table {
+        insert: v(100.0, 50.0),
+        col_widths: vec![20.0, 30.0],
+        row_heights: vec![8.0, 6.0, 6.0],
+        cells: vec![
+            vec![TableCell { merged: Some((1, 2)), ..cell("Rooms") }, cell("")],
+            vec![cell("Name"), cell("Area")],
+            vec![cell("Office"), TableCell { text_height: Some(3.5), ..cell("12.5") }],
+        ],
+        style: "Schedule".into(),
+        text_height: 2.5,
+        title: true,
+        header: false,
+        ..Table::default()
+    };
+    let style = d.mline_styles[0].clone();
+    let mline = MLine {
+        style: style.name.clone(),
+        def: style,
+        scale: 1.0,
+        justification: MLineJust::Zero,
+        closed: false,
+        no_start_caps: false,
+        no_end_caps: false,
+        vertices: vec![MLineVertex::new(v(0.0, 0.0)), MLineVertex::new(v(40.0, 0.0)), MLineVertex::new(v(40.0, 30.0))],
+    };
+    let mleader = MLeader {
+        leaders: vec![vec![v(0.0, 60.0), v(10.0, 70.0)]],
+        landing: v(15.0, 70.0),
+        dogleg: 4.0,
+        text: Some(MText { insert: v(19.5, 70.0), height: 2.0, width: 30.0, attach: 1, rotation: 0.0, style: "Standard".into(), contents: "Note".into(), line_spacing: 1.0, line_spacing_exact: false, columns: None }),
+        style: "Callout".into(),
+        arrow_size: 3.0,
+        spline: false,
+        block: None,
+    };
+    let helix = Helix { center: v(200.0, 0.0), base_radius: 5.0, top_radius: 5.0, height: 20.0, turns: 3.0, start_angle: 0.0, ccw: true, constrain: HelixConstrain::default() }.sanitized();
+    let insert = Insert {
+        block: "CHAIR".into(),
+        insert: v(300.0, 0.0),
+        scale: Vec3::new(1.0, 1.0, 1.0),
+        rotation: 0.0,
+        attribs: Vec::new(),
+        cols: 1,
+        rows: 1,
+        col_spacing: 0.0,
+        row_spacing: 0.0,
+        clip: Some(ClipBoundary::new(vec![Vec2::new(-1.0, -1.0), Vec2::new(5.0, 4.0)])),
+    };
+    let image = Image { insert: v(0.0, 100.0), u: Vec3::new(0.1, 0.0, 0.0), v: Vec3::new(0.0, 0.1, 0.0), size: Vec2::new(640.0, 480.0), path: "plans/site.png".into(), name: "site".into(), ..Image::default() };
+    for (i, k) in [EntityKind::Table(table), EntityKind::MLine(mline), EntityKind::MLeader(mleader), EntityKind::Helix(helix), EntityKind::Insert(insert), EntityKind::Image(image)].into_iter().enumerate() {
+        d.model.push(Entity { handle: Handle(0x200 + i as u64), common: Common::default(), kind: k });
+    }
+    d
+}
+
+fn same_entities(d: &Drawing, back: &Drawing) -> Vec<String> {
+    let mut problems = Vec::new();
+    for e in d.model.iter() {
+        match back.model.get(e.handle) {
+            None => problems.push(format!("{}: missing", e.kind.dxf_name())),
+            Some(b) => problems.extend(diff(e, b).into_iter().map(|p| format!("{}{p}", e.kind.dxf_name()))),
+        }
+    }
+    problems
+}
+
+#[test]
+fn tables_multilines_multileaders_helices_clips_and_images_read_back_as_written() {
+    let d = styled_drawing();
+    let back = round_trip(&d);
+    let problems = same_entities(&d, &back);
+    assert!(problems.is_empty(), "{problems:#?}");
+    for name in ["Schedule"] {
+        assert_eq!(back.table_styles.iter().find(|s| s.name == name), d.table_styles.iter().find(|s| s.name == name), "table style {name}");
+    }
+    assert_eq!(back.mline_styles.iter().find(|s| s.name == "Wall"), d.mline_styles.iter().find(|s| s.name == "Wall"));
+    assert_eq!(back.mleader_styles.iter().find(|s| s.name == "Callout"), d.mleader_styles.iter().find(|s| s.name == "Callout"));
+}
+
+#[test]
+fn tables_and_multilines_are_edited_in_the_file_they_came_from() {
+    let first = crate::write(&styled_drawing(), "AC1032").unwrap().0;
+    let (mut d, _) = crate::read_here(&first, crate::Limits::DEFAULT).unwrap();
+    // A second save of the unchanged drawing reads back the same.
+    let again = crate::write(&d, "AC1032").unwrap().0;
+    let unchanged = crate::read_here(&again, crate::Limits::DEFAULT).unwrap().0;
+    let problems = same_entities(&d, &unchanged);
+    assert!(problems.is_empty(), "{problems:#?}");
+    // Change a cell, move the multiline's last vertex and take the clip off.
+    d.modify_entity(Handle(0x200), |e| {
+        if let EntityKind::Table(t) = &mut e.kind {
+            t.cells[2][0].text = "Meeting".into();
+            t.col_widths[1] = 35.0;
+        }
+    })
+    .unwrap();
+    d.modify_entity(Handle(0x201), |e| {
+        if let EntityKind::MLine(m) = &mut e.kind
+            && let Some(last) = m.vertices.last_mut()
+        {
+            last.p = v(40.0, 45.0);
+        }
+    })
+    .unwrap();
+    d.modify_entity(Handle(0x204), |e| {
+        if let EntityKind::Insert(i) = &mut e.kind {
+            i.clip = None;
+        }
+    })
+    .unwrap();
+    let (bytes, unwritten) = crate::write(&d, "AC1032").unwrap();
+    assert!(unwritten.is_empty(), "{unwritten:?}");
+    let back = crate::read_here(&bytes, crate::Limits::DEFAULT).unwrap().0;
+    let problems = same_entities(&d, &back);
+    assert!(problems.is_empty(), "{problems:#?}");
+}

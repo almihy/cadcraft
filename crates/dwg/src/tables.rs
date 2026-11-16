@@ -447,6 +447,9 @@ pub fn put_dstyle(x: &mut ExtendedData, overrides: &Map<String, Value>, lookups:
     let mut values = Vec::new();
     for (field, v) in overrides {
         let Some((code, kind)) = DIM_CODES.iter().find(|(f, _, _)| f == field).map(|(_, c, k)| (*c, *k)) else { continue };
+        // The value as a dimension style holds it (a colour given as its ACI number, say).
+        let canon = canonical(field, v);
+        let v = canon.as_ref().unwrap_or(v);
         let val = match kind {
             K::Real => v.as_f64().filter(|x| x.is_finite()).map(XDataValue::Real),
             K::Int => v.as_i64().and_then(|n| i16::try_from(n).ok()).map(XDataValue::Integer16),
