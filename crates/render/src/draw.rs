@@ -363,6 +363,12 @@ fn draw_dimension(b: &mut Builder, ctx: &Ctx, e: &Entity, dm: &cadcraft_doc::Dim
             if !b.expand() {
                 break;
             }
+            // The block's POINTs are the dimension's definition points (layer Defpoints): AutoCAD
+            // shows them as grips only, never as PDMODE figures, which at PDSIZE 0 would be
+            // 5 % of the view across at every extension-line origin.
+            if matches!(be.kind, EntityKind::Point(_)) {
+                continue;
+            }
             if fill_pending && starts_text_marks(be, &g) {
                 for corners in &boxes {
                     dim_text_fill(b, ctx, e, &style, corners);

@@ -1,6 +1,6 @@
 //! POINT display: point style (PDMODE) and size (PDSIZE) (issue #261).
 
-use cadcraft_doc::{Common, Drawing, EntityKind, Line, Point, Space};
+use cadcraft_doc::{Block, Common, DimKind, Dimension, Drawing, Entity, EntityKind, Handle, Line, Point, Space};
 use cadcraft_geom::{Bounds2, Vec3};
 use cadcraft_render::{DisplayList, Kind, Options, build};
 
@@ -66,4 +66,44 @@ fn hostile_point_settings_do_not_panic() {
             assert!(l.verts.iter().all(|v| v.is_finite()), "PDMODE {mode} PDSIZE {size}");
         }
     }
+}
+
+/// A DWG's dimension block holds the dimension's definition points as POINTs on Defpoints. AutoCAD
+/// never draws them as PDMODE figures (at PDSIZE 0 each would be 5 % of the view across: on a
+/// plan with thousands of dimensions, huge circles over the whole sheet), but draws the rest of
+/// the block; a POINT that is not in a dimension block is drawn as usual.
+#[test]
+fn definition_points_of_a_dimension_block_are_not_drawn() {
+    let mut d = Drawing::new_imperial();
+    d.header.set_i64("PDMODE", 34);
+    d.header.set_f64("PDSIZE", 0.0);
+    let mut blk = Block::new("*D1");
+    blk.entities.push(Entity::new(Handle(1), EntityKind::Line(Line { a: Vec3::new(0.0, 0.0, 0.0), b: Vec3::new(0.0, 10.0, 0.0) })));
+    blk.entities.push(Entity::new(Handle(2), EntityKind::Point(Point { p: Vec3::new(5.0, 5.0, 0.0), angle: 0.0 })));
+    d.blocks.insert("*D1".into(), std::sync::Arc::new(blk));
+    let dm = Dimension {
+        kind: DimKind::Linear { rotation: 0.0 },
+        defpt: Vec3::new(0.0, 5.0, 0.0),
+        text_mid: Vec3::ZERO,
+        p13: Vec3::ZERO,
+        p14: Vec3::new(10.0, 0.0, 0.0),
+        p15: Vec3::ZERO,
+        p16: Vec3::ZERO,
+        text: String::new(),
+        style: "Standard".into(),
+        measurement: 0.0,
+        text_rotation: 0.0,
+        user_text_pos: false,
+        block: Some("*D1".into()),
+        overrides: Default::default(),
+        assoc: Vec::new(),
+        marks: Default::default(),
+        insertion_point: Vec3::ZERO,
+    };
+    d.add(&Space::Model, Common::default(), EntityKind::Dimension(dm)).unwrap();
+    let l = build(&d, &Space::Model, &Options::default());
+    let drawn: Vec<_> = l.prims.iter().filter(|p| matches!(p.kind, Kind::Point | Kind::Polyline)).collect();
+    assert_eq!(drawn.len(), 1, "only the block's line, no point figure: {drawn:?}");
+    let b = Bounds2::from_points(drawn.iter().flat_map(|p| l.points(p).iter().copied()));
+    assert!(b.max.x < 1e-6, "nothing drawn around the point at (5, 5): {b:?}");
 }
