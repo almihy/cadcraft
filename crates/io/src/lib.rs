@@ -88,8 +88,7 @@ pub fn read(bytes: &[u8], name: impl AsRef<Path>) -> Result<Drawing> {
 /// harness counts: `None` for every file now (a DWG is read straight into the drawing).
 pub(crate) fn read_source(bytes: &[u8], name: &Path) -> Result<(Drawing, Option<Vec<u8>>)> {
     if cadcraft_dwg::is_dwg(bytes) {
-        let (mut d, _, kept) = cadcraft_dwg::read_kept(bytes, cadcraft_dwg::Limits::DEFAULT).map_err(dwg_error)?;
-        dwg_kept::complete(&mut d, &kept)?;
+        let (d, _) = cadcraft_dwg::read_with(bytes, cadcraft_dwg::Limits::DEFAULT, &dwg_ext::Own).map_err(dwg_error)?;
         return Ok((d, None));
     }
     let d = match (Format::from_path(name), ext(name).as_str()) {
@@ -115,6 +114,8 @@ pub fn write_with(d: &Drawing, name: impl AsRef<Path>, opts: &SaveOptions) -> Re
     let version = opts.version.unwrap_or_else(|| save_version(d));
     match Format::from_path(name) {
         Some(Format::Dxf) => {
+            let full = dwg_ext::for_dxf(d)?;
+            let d = full.as_ref().unwrap_or(d);
             let tags = dxf_write::tags(d, version);
             // Before 2007 the text is in the code page the header declares.
             let code_page = dxf_write::code_page(d, version);
@@ -150,17 +151,10 @@ pub fn write_noted(d: &Drawing, name: impl AsRef<Path>, opts: &SaveOptions) -> R
 fn write_dwg(d: &Drawing, version: Version) -> Result<(Vec<u8>, Unwritten)> {
     let with_blocks = dxf_write::with_dim_blocks(d);
     let d = with_blocks.as_ref().unwrap_or(d);
-    if d.foreign.dwg_source.is_some() {
-        return cadcraft_dwg::write(d, version.code()).map_err(dwg_error);
-    }
-    // No DWG to write into: the document starts as what CADCraft's DXF writer gives of the
-    // drawing (its objects, styles, tables, multileaders… as acadrust reads them), and the
-    // drawing's entities and tables are then written into it directly.
-    let seed = dwg_kept::seed(d, version)?;
-    cadcraft_dwg::write_seeded(d, seed, version.code()).map_err(dwg_error)
+    cadcraft_dwg::write_with(d, version.code(), &dwg_ext::Own).map_err(dwg_error)
 }
 
-mod dwg_kept;
+mod dwg_ext;
 
 /// Like [`write`], but image formats (PNG, SVG, PDF) show `window` (a model-space rectangle in
 /// drawing units, centred and scaled to fit the image without distortion) instead of the
@@ -245,7 +239,10 @@ pub fn read_dxf(bytes: &[u8]) -> Result<Drawing> {
 }
 /// The drawing as R2000 ASCII DXF, whatever its own version ([`write_with`] chooses one).
 pub fn write_dxf(d: &Drawing) -> String {
-    dxf_write::write(d)
+    match dwg_ext::for_dxf(d) {
+        Ok(Some(full)) => dxf_write::write(&full),
+        _ => dxf_write::write(d),
+    }
 }
 
 /// Regions, written as closed polylines.

@@ -106,20 +106,56 @@ fn guarded<R>(what: &str, f: impl FnOnce() -> R) -> Result<R, String> {
     std::panic::catch_unwind(AssertUnwindSafe(f)).map_err(|_| what.to_string())
 }
 
+/// What a program adds to the translation, both ways: its own data, which a DWG carries in the
+/// forms the format leaves to applications (extended data, dictionary records). CADCraft's file
+/// layer (`cadcraft-io`) reads and writes its own extended data through it, as it does in DXF.
+pub trait Extension {
+    /// Called with the file's document once the drawing has been read from it.
+    fn read(&self, _doc: &acadrust::CadDocument, _d: &mut Drawing) {}
+    /// The drawing to write for `d`: `d` itself, or a copy in the form this crate writes (e.g.
+    /// with the program's own kinds as standard entities carrying its extended data).
+    fn prepare<'a>(&self, d: &'a Drawing) -> std::borrow::Cow<'a, Drawing> {
+        std::borrow::Cow::Borrowed(d)
+    }
+    /// Called once the drawing's state is in the document, before it is written.
+    fn write(&self, _d: &Drawing, _doc: &mut acadrust::CadDocument) {}
+}
+
+/// No extension: the drawing as this crate translates it.
+pub struct Plain;
+
+impl Extension for Plain {}
+
 /// Read a DWG into a drawing, with notes on what the read left out (object records the reader
 /// couldn't decode), empty when the read was complete. In a native app that called
 /// [`worker::use_own_worker`], the file is first read in a child process.
 pub fn read(bytes: &[u8], limits: Limits) -> Result<(Drawing, Vec<String>), String> {
+    read_with(bytes, limits, &Plain)
+}
+
+/// [`read`] with `ext` adding what the program keeps of the file.
+pub fn read_with(bytes: &[u8], limits: Limits, ext: &dyn Extension) -> Result<(Drawing, Vec<String>), String> {
     check_size(bytes, limits)?;
     #[cfg(not(target_arch = "wasm32"))]
     worker::probe(bytes, limits)?;
-    read_here(bytes, limits)
+    read_here_with(bytes, limits, ext)
 }
 
 /// [`read`] in this process, without the worker.
 pub fn read_here(bytes: &[u8], limits: Limits) -> Result<(Drawing, Vec<String>), String> {
+    read_here_with(bytes, limits, &Plain)
+}
+
+fn read_here_with(bytes: &[u8], limits: Limits, ext: &dyn Extension) -> Result<(Drawing, Vec<String>), String> {
     check_size(bytes, limits)?;
-    let (mut d, notes) = guarded("the DWG reader failed on this file", || read::document(bytes, limits))??;
+    let (mut d, notes) = guarded("the DWG reader failed on this file", || -> Result<_, String> {
+        let (doc, notes) = read::decode(bytes, limits)?;
+        let version = version(bytes).unwrap_or_else(|| "AC1032".into());
+        let mut d = read::drawing(&doc, &version);
+        d.read_notes.clone_from(&notes);
+        ext.read(&doc, &mut d);
+        Ok((d, notes))
+    })??;
     attach_source(&mut d, bytes);
     Ok((d, notes))
 }
@@ -150,8 +186,13 @@ fn check_size(bytes: &[u8], limits: Limits) -> Result<(), String> {
 /// the DWG leaves out. A drawing read from a DWG is written into that file's document (see the
 /// crate documentation), so what CADCraft doesn't model goes back out unchanged.
 pub fn write(d: &Drawing, version: &str) -> Result<(Vec<u8>, Unwritten), String> {
+    write_with(d, version, &Plain)
+}
+
+/// [`write`] with `ext` writing what the program keeps beyond this crate's translation.
+pub fn write_with(d: &Drawing, version: &str, ext: &dyn Extension) -> Result<(Vec<u8>, Unwritten), String> {
     let v = writable(version)?;
-    guarded("the DWG writer failed on this drawing", || write::write(d, v))?
+    guarded("the DWG writer failed on this drawing", || write::write(d, v, ext))?
 }
 
 /// The acadrust version for a code from [`VERSIONS`].
@@ -168,38 +209,18 @@ fn writable(version: &str) -> Result<acadrust::DxfVersion, String> {
     })
 }
 
-/// acadrust, for callers that hand [`write_seeded`] a document of their own.
+/// acadrust, for [`Extension`]s.
 pub use acadrust;
-
-/// [`write`] into `seed`, a document a caller made for a drawing with no DWG source (CADCraft's
-/// DXF writer gives it everything the drawing holds besides what this crate writes itself).
-pub fn write_seeded(d: &Drawing, seed: acadrust::CadDocument, version: &str) -> Result<(Vec<u8>, Unwritten), String> {
-    let v = writable(version)?;
-    guarded("the DWG writer failed on this drawing", || write::write_into(d, seed, v))?
-}
 
 /// The objects of the DWG a drawing was read from that CADCraft keeps without modelling them
 /// (dictionaries, other programs' objects, dynamic block data, xdata), with the entities that
 /// carry or use them (block references, viewports, images and the kinds read as unmodelled), as
-/// DXF: what a DXF reader keeps of a file, derived from the DWG when it is wanted (a DXF save of
-/// the drawing, dynamic blocks). The rest of the entities are left out, so it stays small.
+/// DXF: what a DXF reader keeps of a file, derived from the DWG only when the drawing is saved as
+/// DXF (reading and writing DWG never go through DXF). The rest of the entities are left out, so
+/// it stays small.
 pub fn kept_dxf(source: &[u8]) -> Result<Vec<u8>, String> {
     let (doc, _) = guarded("the DWG reader failed on this file", || read::decode(source, Limits::DEFAULT))??;
     guarded("the DWG reader failed on this file", || kept_of(doc))?
-}
-
-/// [`read`] with [`kept_dxf`] of the same file, decoded once.
-pub fn read_kept(bytes: &[u8], limits: Limits) -> Result<(Drawing, Vec<String>, Vec<u8>), String> {
-    check_size(bytes, limits)?;
-    #[cfg(not(target_arch = "wasm32"))]
-    worker::probe(bytes, limits)?;
-    let (doc, notes) = guarded("the DWG reader failed on this file", || read::decode(bytes, limits))??;
-    let version = version(bytes).unwrap_or_else(|| "AC1032".into());
-    let mut d = guarded("the DWG reader failed on this file", || read::drawing(&doc, &version))?;
-    d.read_notes.clone_from(&notes);
-    attach_source(&mut d, bytes);
-    let kept = guarded("the DWG reader failed on this file", || kept_of(doc))??;
-    Ok((d, notes, kept))
 }
 
 fn kept_of(mut doc: acadrust::CadDocument) -> Result<Vec<u8>, String> {

@@ -17,18 +17,16 @@ use crate::entity_write::{Cx, build};
 use crate::tables::{self as tb, Lookups};
 use crate::{Limits, Unwritten};
 
-pub fn write(d: &Drawing, v: DxfVersion) -> Result<(Vec<u8>, Unwritten), String> {
-    let doc = match &d.foreign.dwg_source {
+pub fn write(d: &Drawing, v: DxfVersion, ext: &dyn crate::Extension) -> Result<(Vec<u8>, Unwritten), String> {
+    let d = ext.prepare(d);
+    let d = d.as_ref();
+    let mut doc = match &d.foreign.dwg_source {
         Some(src) => crate::read::decode(&src.bytes, Limits::DEFAULT)?.0,
         None => CadDocument::new(),
     };
-    write_into(d, doc, v)
-}
-
-/// [`write`] into `doc`.
-pub fn write_into(d: &Drawing, mut doc: CadDocument, v: DxfVersion) -> Result<(Vec<u8>, Unwritten), String> {
     doc.version = v;
     let mut unwritten = into_document(d, &mut doc);
+    ext.write(d, &mut doc);
     for (kind, n) in crate::objects::drop_unwritable(&mut doc) {
         *unwritten.entry(kind).or_default() += n;
     }

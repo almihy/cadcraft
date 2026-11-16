@@ -32,15 +32,6 @@ pub fn decode(bytes: &[u8], limits: Limits) -> Result<(CadDocument, Vec<String>)
     Ok((outcome.document, read_notes(&outcome.stats)))
 }
 
-/// The drawing of a DWG, with notes on what the read left out.
-pub fn document(bytes: &[u8], limits: Limits) -> Result<(Drawing, Vec<String>), String> {
-    let (doc, notes) = decode(bytes, limits)?;
-    let version = crate::version(bytes).unwrap_or_else(|| "AC1032".into());
-    let mut d = drawing(&doc, &version);
-    d.read_notes.clone_from(&notes);
-    Ok((d, notes))
-}
-
 /// Most record types named in the skipped-records note.
 const NOTE_TYPES: usize = 6;
 
