@@ -104,11 +104,15 @@ pub fn into_document(d: &Drawing, doc: &mut CadDocument, ext: &dyn crate::Extens
             container(doc, ms, &d.model, (&names, d.foreign.dwg_source.as_ref()), &mut cx, &mut unwritten);
         }
         for l in &d.layouts {
-            let Some(br) = layout_record(doc, &l.name) else { continue };
+            // A new layout's records take the document's handles, above the writer's.
+            doc.header.handle_seed = doc.header.handle_seed.max(next.get());
+            let br = layout_record(doc, &l.name);
+            next.set(next.get().max(doc.header.handle_seed).max(doc.next_handle()));
+            let Some(br) = br else { continue };
             container(doc, br, &l.entities, (&names, d.foreign.dwg_source.as_ref()), &mut cx, &mut unwritten);
         }
         let tables = std::mem::take(&mut cx.tables);
-        table_blocks(d, doc, &tables, ext, &mut cx);
+        table_blocks(d, doc, &tables, ext, &mut cx, &next);
     }
     doc.header.handle_seed = doc.header.handle_seed.max(next.get());
     crate::xclip::write(d, doc);
@@ -200,8 +204,11 @@ fn image_definitions(d: &Drawing, doc: &mut CadDocument) {
 
 /// The anonymous block (`*T…`) of each table written from the drawing, drawn by the program
 /// ([`crate::Extension::table_block`]): the table's own block made again, or a new one.
-fn table_blocks(d: &Drawing, doc: &mut CadDocument, tables: &[AHandle], ext: &dyn crate::Extension, cx: &mut Cx) {
+fn table_blocks(d: &Drawing, doc: &mut CadDocument, tables: &[AHandle], ext: &dyn crate::Extension, cx: &mut Cx, next: &Cell<u64>) {
     for h in tables {
+        // The document's allocator (new block records) and the writer's (`cx.alloc`) hand out
+        // handles from one count: each starts above what the other gave.
+        doc.header.handle_seed = doc.header.handle_seed.max(next.get());
         let Some(e) = d.entity(cadcraft_doc::Handle(h.value())).or_else(|| d.blocks.values().find_map(|b| b.entities.get(cadcraft_doc::Handle(h.value())))) else {
             continue;
         };
@@ -231,6 +238,7 @@ fn table_blocks(d: &Drawing, doc: &mut CadDocument, tables: &[AHandle], ext: &dy
                 br
             }
         };
+        next.set(next.get().max(doc.header.handle_seed).max(doc.next_handle()));
         let mut handles = Vec::new();
         for mut part in parts {
             part.handle = cadcraft_doc::Handle((cx.alloc)().value());

@@ -183,3 +183,43 @@ fn a_cell_with_no_style_record_inherits_the_table_style() {
 fn a_style_height_without_an_override_is_cleared() {
     assert_eq!(first_cell_height(false, |c| c.style = Some(styled(0.18, CellStylePropertyFlags::NONE))), None);
 }
+
+/// A new drawing's table gets every grid line in its `*T` block: the block's lines took handles
+/// the document had already given its new block record, and most of them were lost.
+#[test]
+#[cfg(not(all(target_os = "freebsd", target_arch = "aarch64")))]
+fn a_new_tables_block_has_its_whole_grid() {
+    let mut d = Drawing::new_metric();
+    let cell = |t: &str| TableCell { text: t.into(), ..TableCell::default() };
+    let table = Table {
+        col_widths: vec![30.0, 25.0],
+        row_heights: vec![9.0, 7.0, 7.0, 7.0],
+        cells: vec![
+            vec![TableCell { merged: Some((1, 2)), ..cell("Room schedule") }, cell("")],
+            vec![cell("Room"), cell("Area")],
+            vec![cell("Office"), cell("12.5")],
+            vec![cell("Meeting"), cell("18.0")],
+        ],
+        ..Table::default()
+    };
+    d.add(&Space::Model, Common::default(), EntityKind::Table(table)).unwrap();
+    let bytes = cadcraft_io::write(&d, "grid.dwg").unwrap();
+    let doc = acadrust::DwgReader::from_stream(std::io::Cursor::new(bytes)).read().unwrap();
+    let br = doc
+        .entities()
+        .find_map(|e| match e {
+            acadrust::entities::EntityType::Table(t) => t.block_record_handle,
+            _ => None,
+        })
+        .unwrap();
+    let block = doc.block_records.iter().find(|b| b.handle == br).unwrap();
+    let lines = block.entity_handles.iter().filter(|h| matches!(doc.get_entity(**h), Some(acadrust::entities::EntityType::Line(_)))).count();
+    // Five row edges, the two outer column edges and the inside one below the title.
+    assert_eq!(lines, 8, "{block:?}");
+    let mut handles: Vec<u64> = doc.entities().map(|e| e.common().handle.value()).collect();
+    handles.extend(doc.block_records.iter().flat_map(|b| [b.handle.value(), b.block_entity_handle.value(), b.block_end_handle.value()]));
+    let n = handles.len();
+    handles.sort_unstable();
+    handles.dedup();
+    assert_eq!(handles.len(), n, "a handle given twice");
+}
