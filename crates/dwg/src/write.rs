@@ -43,6 +43,26 @@ pub fn into_document(d: &Drawing, doc: &mut CadDocument) -> Unwritten {
     tables(d, doc, &names);
     blocks(d, doc);
     current_records(d, doc);
+    {
+        let styles = tb::handles(doc.text_styles.iter().map(|s| (s.name.as_str(), s.handle)));
+        let style = |n: &str| styles.get(&up(n)).copied();
+        crate::styles::write(d, doc, &names, &style);
+    }
+    let object_names = |pick: fn(&acadrust::objects::ObjectType) -> Option<(&str, AHandle)>| -> HashMap<String, AHandle> {
+        tb::handles(doc.objects.values().filter_map(pick))
+    };
+    let mline_styles = object_names(|o| match o {
+        acadrust::objects::ObjectType::MLineStyle(x) => Some((x.name.as_str(), x.handle)),
+        _ => None,
+    });
+    let table_styles = object_names(|o| match o {
+        acadrust::objects::ObjectType::TableStyle(x) => Some((x.name.as_str(), x.handle)),
+        _ => None,
+    });
+    let mleader_styles = object_names(|o| match o {
+        acadrust::objects::ObjectType::MultiLeaderStyle(x) => Some((x.name.as_str(), x.handle)),
+        _ => None,
+    });
 
     // Name → handle lookups, and a handle allocator above everything there is.
     let styles = tb::handles(doc.text_styles.iter().map(|s| (s.name.as_str(), s.handle)));
@@ -60,7 +80,15 @@ pub fn into_document(d: &Drawing, doc: &mut CadDocument) -> Unwritten {
             next.set(h + 1);
             AHandle::new(h)
         };
-        let mut cx = Cx { lookups: Lookups { style: &style, block: &block, ltype: &ltype }, layers: &layers, alloc: &mut alloc };
+        let mut cx = Cx {
+            lookups: Lookups { style: &style, block: &block, ltype: &ltype },
+            layers: &layers,
+            alloc: &mut alloc,
+            drawing: d,
+            mline_styles: &mline_styles,
+            table_styles: &table_styles,
+            mleader_styles: &mleader_styles,
+        };
         // Block definitions (an xref's objects come from its file), model space, layouts.
         for b in d.blocks.values().filter(|b| b.xref_path.is_none()) {
             if let Some(br) = blocks.get(&up(&b.name)) {

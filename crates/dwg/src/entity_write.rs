@@ -18,6 +18,17 @@ pub struct Cx<'a> {
     pub lookups: Lookups<'a>,
     pub layers: &'a HashMap<String, AHandle>,
     pub alloc: &'a mut dyn FnMut() -> AHandle,
+    /// The drawing written (styles and blocks entities refer to).
+    pub drawing: &'a cadcraft_doc::Drawing,
+    /// Multiline, table and multileader styles' handles, by upper-case name.
+    pub mline_styles: &'a HashMap<String, AHandle>,
+    pub table_styles: &'a HashMap<String, AHandle>,
+    pub mleader_styles: &'a HashMap<String, AHandle>,
+}
+
+/// The handle of the style `name` in `map` (upper-case names), Standard's when it has none.
+fn style_in(map: &HashMap<String, AHandle>, name: &str) -> Option<AHandle> {
+    map.get(&up(name.trim())).or_else(|| map.get("STANDARD")).copied()
 }
 
 fn z() -> Vector3 {
@@ -356,9 +367,58 @@ pub fn build(e: &Entity, prev: Option<&EntityType>, cx: &mut Cx) -> Option<Entit
             x.dimension_style_handle = None;
             EntityType::Tolerance(x)
         }
-        // Not written from CADCraft's model yet: a changed one is reported, and the file's
-        // object stays as it was read.
-        EntityKind::Helix(_) | EntityKind::MLine(_) | EntityKind::MLeader(_) | EntityKind::Table(_) | EntityKind::Region(_) => return None,
+        EntityKind::MLine(m) => {
+            let mut x = match same(|p| matches!(p, EntityType::MLine(_))) { Some(EntityType::MLine(x)) => x, _ => ae::MLine::new() };
+            crate::mline::put(&mut x, m, style_in(cx.mline_styles, &m.style));
+            EntityType::MLine(x)
+        }
+        EntityKind::Table(t) => {
+            let mut x = match same(|p| matches!(p, EntityType::Table(_))) {
+                Some(EntityType::Table(x)) => x,
+                _ => Box::new(ae::Table::new(Vector3::default(), 0, 0)),
+            };
+            crate::table::put(&mut x, t);
+            x.table_style_handle = style_in(cx.table_styles, &t.style);
+            x.normal = a3(n);
+            EntityType::Table(x)
+        }
+        EntityKind::MLeader(m) => {
+            let mut x = match same(|p| matches!(p, EntityType::MultiLeader(_))) { Some(EntityType::MultiLeader(x)) => x, _ => Box::new(ae::MultiLeader::new()) };
+            let text_style = m.text.as_ref().map_or("Standard", |t| t.style.as_str());
+            let refs = crate::mleader::Refs {
+                style: style_in(cx.mleader_styles, &m.style),
+                text_style: (cx.lookups.style)(text_style).or_else(|| (cx.lookups.style)("Standard")),
+                block: m.block.as_ref().and_then(|b| (cx.lookups.block)(&b.block)),
+            };
+            crate::mleader::put(&mut x, m, cx.drawing, &refs);
+            EntityType::MultiLeader(x)
+        }
+        EntityKind::Helix(h) => {
+            let mut x = match same(|p| matches!(p, EntityType::Helix(_))) { Some(EntityType::Helix(x)) => x, _ => Box::new(ae::Helix::new()) };
+            let (s, z) = h.spline3();
+            x.spline.degree = i32::try_from(s.degree).unwrap_or(3);
+            x.spline.knots.clone_from(&s.knots);
+            x.spline.control_points = s.control.iter().zip(&z).map(|(c, z)| a3(c.to3(*z))).collect();
+            x.spline.weights.clear();
+            x.spline.fit_points.clear();
+            x.spline.knot_tolerance = 1e-10;
+            x.spline.control_tolerance = 1e-10;
+            x.axis_base_point = a3(h.center);
+            x.start_point = a3(h.start_point());
+            x.axis_vector = Vector3::new(0.0, 0.0, 1.0);
+            x.radius = h.base_radius;
+            x.turns = h.turns;
+            x.turn_height = h.turn_height();
+            x.handedness = h.ccw;
+            x.constraint = match h.constrain.to_dxf() {
+                1 => ae::HelixConstraint::Turns,
+                2 => ae::HelixConstraint::Height,
+                _ => ae::HelixConstraint::TurnHeight,
+            };
+            EntityType::Helix(x)
+        }
+        // CADCraft's own kind, written by its file layer as polylines (see `Extension::prepare`).
+        EntityKind::Region(_) => return None,
     };
     let common = out.common_mut();
     if let Some(p) = prev {

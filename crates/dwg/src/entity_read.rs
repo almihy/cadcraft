@@ -29,6 +29,12 @@ pub struct Names {
     pub images: HashMap<u64, (String, Vec2, u8)>,
     /// Multileader styles, by handle.
     pub mleader_styles: HashMap<u64, String>,
+    /// Table styles' names and data text heights, by handle.
+    pub table_styles: HashMap<u64, (String, f64)>,
+    /// Multiline styles' names, by handle.
+    pub mline_style_names: HashMap<u64, String>,
+    /// The file's multiline styles, as CADCraft's.
+    pub mline_styles: Vec<cadcraft_doc::MLineStyle>,
 }
 
 impl Names {
@@ -55,11 +61,32 @@ impl Names {
                 };
                 n.images.insert(d.handle.value(), (d.file_name.clone(), Vec2::new(d.pixel_size.0, d.pixel_size.1), units));
             }
-            if let acadrust::objects::ObjectType::MultiLeaderStyle(m) = o {
-                n.mleader_styles.insert(m.handle.value(), m.name.clone());
+            match o {
+                acadrust::objects::ObjectType::MultiLeaderStyle(m) => {
+                    n.mleader_styles.insert(m.handle.value(), m.name.clone());
+                }
+                acadrust::objects::ObjectType::TableStyle(t) => {
+                    let h = t.data_row_style.text_height;
+                    let h = if h.is_finite() && h > 0.0 { h } else { cadcraft_doc::TableStyle::default().text_height };
+                    n.table_styles.insert(t.handle.value(), (t.name.clone(), h));
+                }
+                acadrust::objects::ObjectType::MLineStyle(m) => {
+                    n.mline_style_names.insert(m.handle.value(), m.name.clone());
+                    if let Some(st) = crate::styles::mline_style(m) {
+                        n.mline_styles.push(st);
+                    }
+                }
+                _ => {}
             }
         }
         n
+    }
+
+    /// The name and text height of the table style `h` (Standard's when the file has none).
+    pub fn table_style(&self, h: Option<acadrust::types::Handle>) -> (String, f64) {
+        h.and_then(|h| self.table_styles.get(&h.value()).cloned())
+            .or_else(|| self.table_styles.values().find(|(n, _)| n.eq_ignore_ascii_case("Standard")).cloned())
+            .unwrap_or_else(|| ("Standard".into(), cadcraft_doc::TableStyle::default().text_height))
     }
 }
 
@@ -230,7 +257,7 @@ fn kind(e: &EntityType, names: &Names) -> Option<(Common, EntityKind)> {
             (cm, EntityKind::Insert(ins))
         }
         EntityType::Dimension(d) => match d.as_ref() {
-            ADim::Arc(_) | ADim::LargeRadial(_) => unknown(e, &unknown_name(e)),
+            ADim::LargeRadial(_) => unknown(e, &unknown_name(e)),
             dim => {
                 let b = dim.base();
                 let cm = common(&b.common, 0.0, b.normal, true);
@@ -276,6 +303,19 @@ fn kind(e: &EntityType, names: &Names) -> Option<(Common, EntityKind)> {
                 boundary.pop();
             }
             (common(&w.common, 0.0, z, false), EntityKind::Wipeout(Wipeout { boundary }))
+        }
+        EntityType::Table(t) => {
+            let cm = common(&t.common, 0.0, t.normal, false);
+            (cm, EntityKind::Table(crate::table::read(t, names.table_style(t.table_style_handle))))
+        }
+        EntityType::MLine(m) => {
+            let cm = common(&m.common, 0.0, m.normal, false);
+            let style = if m.style_name.trim().is_empty() {
+                m.style_handle.and_then(|h| names.mline_style_names.get(&h.value()).cloned()).unwrap_or_default()
+            } else {
+                m.style_name.clone()
+            };
+            (cm, EntityKind::MLine(crate::mline::read(m, &style, &names.mline_styles)))
         }
         EntityType::Tolerance(t) => {
             let dir = v3(t.direction);

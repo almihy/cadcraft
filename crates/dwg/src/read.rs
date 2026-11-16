@@ -117,6 +117,7 @@ pub fn drawing(doc: &CadDocument, version: &str) -> Drawing {
     if !dims.is_empty() {
         d.dim_styles = dims;
     }
+    crate::styles::read(doc, &names, &mut d);
 
     // Blocks (the layouts' own records are their spaces, not blocks).
     let mut layout_records: HashMap<u64, ()> = HashMap::new();

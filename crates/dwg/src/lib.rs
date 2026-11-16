@@ -50,8 +50,12 @@ mod conv;
 mod entity_read;
 mod entity_write;
 mod header;
+mod mleader;
+mod mline;
 mod objects;
 mod read;
+mod styles;
+mod table;
 mod tables;
 mod write;
 

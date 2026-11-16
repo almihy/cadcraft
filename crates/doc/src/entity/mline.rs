@@ -457,6 +457,69 @@ impl crate::Drawing {
     }
 }
 
+/// End of a break that runs to the end of its segment.
+pub const MLINE_TO_END: f64 = 1e12;
+
+/// Breaks from an element's parameters (DXF groups 41 of a vertex): the first is its distance along the miter, the second
+/// where the element starts (from the miter point), then alternately where it stops and starts
+/// again (from its start).
+pub fn mline_breaks(list: &[f64]) -> Vec<(f64, f64)> {
+    let Some(start) = list.get(1).copied() else { return Vec::new() };
+    let mut out = Vec::new();
+    if start > 1e-12 {
+        out.push((0.0, start));
+    }
+    let rest = list.get(2..).unwrap_or(&[]);
+    for pair in rest.chunks(2) {
+        match pair {
+            [a, b] => out.push((start + a, start + b)),
+            [a] => out.push((start + a, MLINE_TO_END)),
+            _ => {}
+        }
+    }
+    out.retain(|(a, b)| b > a);
+    out
+}
+
+/// An element's parameters (DXF groups 41) for one segment: `along` (its distance along the miter), then where
+/// it starts and the breaks (`on`: the drawn pieces along the element, `len` its length).
+pub fn mline_params(along: f64, on: &[(f64, f64)], len: f64) -> Vec<f64> {
+    let mut v = vec![along];
+    let Some(&(s0, _)) = on.first() else {
+        v.push(len);
+        return v;
+    };
+    v.push(s0);
+    for (i, (s, e)) in on.iter().enumerate() {
+        if i > 0 {
+            v.push(s - s0);
+        }
+        if (e - len).abs() > 1e-9 || i + 1 < on.len() {
+            v.push(e - s0);
+        }
+    }
+    v
+}
+
+/// The drawn pieces of `[0, len]` with `gaps` taken out.
+pub fn mline_drawn(len: f64, gaps: impl Iterator<Item = (f64, f64)>) -> Vec<(f64, f64)> {
+    let mut gaps: Vec<(f64, f64)> =
+        gaps.filter(|(a, b)| a.is_finite() && b.is_finite()).map(|(a, b)| (a.min(b).max(0.0), a.max(b).min(len))).filter(|(a, b)| b > a).collect();
+    gaps.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut out = Vec::new();
+    let mut from = 0.0;
+    for (a, b) in gaps {
+        if a > from + 1e-12 {
+            out.push((from, a));
+        }
+        from = f64::max(from, b);
+    }
+    if len > from + 1e-12 {
+        out.push((from, len));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
