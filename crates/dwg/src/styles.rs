@@ -304,8 +304,10 @@ fn enter(doc: &mut CadDocument, dict: AHandle, name: &str, obj: AHandle) {
 /// by name, written when it differs, added when new.
 pub fn write(d: &Drawing, doc: &mut CadDocument, names: &Names, style: &dyn Fn(&str) -> Option<AHandle>) {
     for s in &d.table_styles {
-        let found = doc.objects.values_mut().find_map(|o| match o {
-            ObjectType::TableStyle(x) if x.name.eq_ignore_ascii_case(&s.name) => Some(x),
+        // A style is named by its dictionary entry; its own name may be empty.
+        let named = |h: &AHandle, own: &str| names.table_styles.get(&h.value()).map_or(own, |x| x.0.as_str()).eq_ignore_ascii_case(&s.name);
+        let found = doc.objects.iter_mut().find_map(|(h, o)| match o {
+            ObjectType::TableStyle(x) if named(h, &x.name) => Some(x),
             _ => None,
         });
         match found {
@@ -350,8 +352,9 @@ pub fn write(d: &Drawing, doc: &mut CadDocument, names: &Names, style: &dyn Fn(&
         }
     }
     for s in &d.mleader_styles {
-        let found = doc.objects.values_mut().find_map(|o| match o {
-            ObjectType::MultiLeaderStyle(x) if x.name.eq_ignore_ascii_case(&s.name) => Some(x),
+        let named = |h: &AHandle, own: &str| names.mleader_styles.get(&h.value()).map_or(own, String::as_str).eq_ignore_ascii_case(&s.name);
+        let found = doc.objects.iter_mut().find_map(|(h, o)| match o {
+            ObjectType::MultiLeaderStyle(x) if named(h, &x.name) => Some(x),
             _ => None,
         });
         match found {

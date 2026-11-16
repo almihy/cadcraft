@@ -564,6 +564,17 @@ fn write_records(d: &Drawing, doc: &mut CadDocument) {
         if same {
             continue;
         }
+        // A record the file has takes the new strings in place (a new one would take a handle,
+        // and the handle seed it holds would change again).
+        if let (Some(h), Some(chunks)) = (existing, want)
+            && let Some(ObjectType::XRecord(x)) = doc.objects.get_mut(&h)
+        {
+            x.entries.clear();
+            for c in chunks {
+                x.add_entry(XRecordEntry::string(1, c.clone()));
+            }
+            continue;
+        }
         if let Some(h) = existing {
             doc.objects.remove(&h);
             if let Some(ObjectType::Dictionary(r)) = doc.objects.get_mut(&root) {
