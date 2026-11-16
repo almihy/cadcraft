@@ -14,7 +14,11 @@ mod dxf_read;
 mod dxf_table;
 mod dxf_write;
 mod dxf_xref;
+/// PDF export and plotting (the `pdf` feature, on by default): a program that only reads drawings
+/// (the server's drawing index) builds without the PDF writer.
+#[cfg(feature = "pdf")]
 pub mod pdf;
+#[cfg(feature = "pdf")]
 pub mod plotter;
 /// Raster image files (PNG, JPEG, BMP, TIFF) decoded to pixels.
 pub mod raster;
@@ -34,6 +38,7 @@ pub use cadcraft_doc::Format;
 pub use craft_dxf::Version;
 pub use dxf_read::entity_from_groups;
 pub use dxf_write::entity_groups;
+#[cfg(feature = "pdf")]
 pub use pdf::{PdfOptions, pdf, plot};
 
 /// How a drawing is saved as DXF or DWG.
@@ -181,6 +186,7 @@ pub fn write_framed(d: &Drawing, name: impl AsRef<Path>, window: Option<Bounds2>
         Some(Format::Dxf | Format::Dwg) => write_with(d, name, &SaveOptions::default()),
         Some(Format::Svg) => Ok(svg::export_window(d, &Space::Model, window).into_bytes()),
         Some(Format::Png) => png_framed(d, &Space::Model, 2400, 1600, window),
+        #[cfg(feature = "pdf")]
         Some(Format::Pdf) => pdf::pdf(d, &Space::Model, &PdfOptions { compress: true, window, ..PdfOptions::default() }),
         _ => Err(IoError::Unsupported(ext(name))),
     }

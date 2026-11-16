@@ -1,0 +1,24 @@
+[package]
+name = "cadcraft-index"
+description = "A drawing read once and kept packed, and asked of: its summary, its items by layer, kind, box and text, a block's contents, and a picture of it (Arqiflow's agent)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+cadcraft-doc = { workspace = true }
+cadcraft-geom = { workspace = true }
+cadcraft-color = { workspace = true }
+cadcraft-fonts = { workspace = true }
+cadcraft-render = { workspace = true }
+# Reading a DWG or a DXF as CADCraft opens it; no PDF writer.
+cadcraft-io = { path = "../io", default-features = false }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# The packed drawing: MessagePack (self-describing, as the drawing's serde needs), deflated (flate2 on miniz_oxide,
+# pure Rust, so it builds for WebAssembly), both streamed.
+rmp-serde = "1.3"
+flate2 = "1"

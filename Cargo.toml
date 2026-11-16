@@ -25,6 +25,7 @@ cadcraft-fonts = { path = "crates/fonts" }
 cadcraft-render = { path = "crates/render" }
 cadcraft-io = { path = "crates/io" }
 cadcraft-dwg = { path = "crates/dwg" }
+cadcraft-index = { path = "crates/index" }
 cadcraft-engine = { path = "crates/engine" }
 cadcraft-ui-egui = { path = "crates/ui-egui" }
 cadcraft-mcp = { path = "crates/mcp" }

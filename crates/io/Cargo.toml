@@ -20,7 +20,12 @@ cadcraft-fonts = { workspace = true }
 thiserror = { workspace = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
-craft-pdf = { workspace = true, features = ["write"] }
+craft-pdf = { workspace = true, features = ["write"], optional = true }
+
+[features]
+# PDF export and plotting. Off, the crate reads and writes drawings and draws them as PNG and SVG only.
+default = ["pdf"]
+pdf = ["dep:craft-pdf"]
 
 # DWG files: multithreaded decoding where there are threads.
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
