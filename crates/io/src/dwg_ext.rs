@@ -27,7 +27,7 @@ impl cadcraft_dwg::Extension for Own {
         prepare(d)
     }
 
-    fn document(&self, d: &Drawing, version: cadcraft_dwg::acadrust::DxfVersion) -> std::result::Result<Option<CadDocument>, String> {
+    fn document(&self, d: &Drawing, version: cadcraft_dwg::acadrust::DxfVersion) -> std::result::Result<Option<(CadDocument, crate::Unwritten)>, String> {
         foreign_document(d, version)
     }
 
@@ -393,17 +393,86 @@ fn has_foreign_groups(d: &Drawing) -> bool {
 /// DXF stream only. So such a drawing (and no other) starts from acadrust's read of its DXF,
 /// with the groups declared as the version they were read in; everything CADCraft models is then
 /// written into it directly. Every other drawing starts from an empty document.
-fn foreign_document(d: &Drawing, version: cadcraft_dwg::acadrust::DxfVersion) -> std::result::Result<Option<cadcraft_dwg::acadrust::CadDocument>, String> {
+fn foreign_document(d: &Drawing, version: cadcraft_dwg::acadrust::DxfVersion) -> std::result::Result<Option<(CadDocument, crate::Unwritten)>, String> {
     if !has_foreign_groups(d) {
         return Ok(None);
     }
     let from = d.foreign.version.as_deref().and_then(crate::Version::for_acadver).unwrap_or(crate::Version::R2000);
     let dwg = crate::Version::for_acadver(&format!("{version:?}")).unwrap_or(crate::Version::R2018);
-    let dxf = crate::dxf_write::foreign_bridge(d, from, dwg);
-    std::panic::catch_unwind(move || cadcraft_dwg::acadrust::DxfReader::from_reader(std::io::Cursor::new(dxf.into_bytes())).and_then(|r| r.read()))
+    let (dxf, classes) = crate::dxf_write::foreign_bridge(d, from, dwg);
+    let mut doc = std::panic::catch_unwind(move || cadcraft_dwg::acadrust::DxfReader::from_reader(std::io::Cursor::new(dxf.into_bytes())).and_then(|r| r.read()))
         .map_err(|_| "the DWG writer failed on this drawing".to_string())?
-        .map(Some)
-        .map_err(|e| format!("DWG: {e}"))
+        .map_err(|e| format!("DWG: {e}"))?;
+    let mut unwritten = proxy_classes(&mut doc, &classes, version);
+    // A kept proxy object the DXF itself left out: its class can't be named either.
+    let legacy = version < cadcraft_dwg::acadrust::DxfVersion::AC1027;
+    for o in d.foreign.objects.iter().filter(|o| o.kind.trim().eq_ignore_ascii_case("ACAD_PROXY_OBJECT")) {
+        if !legacy && d.foreign.proxy_class(&o.tags).is_none() {
+            *unwritten.entry("ACAD_PROXY_OBJECT".into()).or_default() += 1;
+        }
+    }
+    Ok(Some((doc, unwritten)))
+}
+
+/// Proxies name their class by number, 500 plus its place in the CLASSES of the file; acadrust
+/// lists the classes it writes in its own order, so each proxy read from the DXF (whose classes
+/// are `dxf_classes`) is given the number of its class in the document. One whose class the
+/// document can't name, and every proxy in a DWG before 2013 (acadrust writes no class for one
+/// there), is left out: kept with its number it would name another class. Left-out proxy objects
+/// are counted (entities are counted where the drawing's entities are written).
+fn proxy_classes(doc: &mut CadDocument, dxf_classes: &[String], version: cadcraft_dwg::acadrust::DxfVersion) -> crate::Unwritten {
+    use cadcraft_dwg::acadrust::entities::{EntityType, ExtendedEntityData};
+    let legacy = version < cadcraft_dwg::acadrust::DxfVersion::AC1027;
+    let numbers: std::collections::HashMap<String, i32> =
+        doc.classes.iter().enumerate().map(|(i, c)| (c.dxf_name.to_ascii_uppercase(), 500 + i32::try_from(i).unwrap_or(i32::MAX - 500))).collect();
+    let renumber = |id: i32| -> Option<i32> {
+        if legacy {
+            return None;
+        }
+        let name = usize::try_from(id - 500).ok().and_then(|i| dxf_classes.get(i))?;
+        numbers.get(name).copied()
+    };
+    let mut gone_entities = Vec::new();
+    for e in doc.entities_mut() {
+        if let EntityType::Extended(x) = e
+            && let ExtendedEntityData::Proxy(p) = &mut x.data
+        {
+            match renumber(p.class_id) {
+                Some(n) => p.class_id = n,
+                None => gone_entities.push(x.common.handle),
+            }
+        }
+    }
+    for h in gone_entities {
+        doc.remove_entity(h);
+        for b in doc.block_records.iter_mut() {
+            b.entity_handles.retain(|x| *x != h);
+        }
+    }
+    let mut unwritten = crate::Unwritten::new();
+    let mut gone = std::collections::HashSet::new();
+    for (h, o) in doc.objects.iter_mut() {
+        if let ObjectType::ProxyObject(p) = o {
+            match renumber(p.class_id) {
+                Some(n) => p.class_id = n,
+                None => {
+                    gone.insert(*h);
+                }
+            }
+        }
+    }
+    for h in &gone {
+        doc.objects.remove(h);
+        *unwritten.entry("ACAD_PROXY_OBJECT".into()).or_default() += 1;
+    }
+    if !gone.is_empty() {
+        for o in doc.objects.values_mut() {
+            if let ObjectType::Dictionary(dc) = o {
+                dc.entries.retain(|(_, v)| !gone.contains(v));
+            }
+        }
+    }
+    unwritten
 }
 
 /// A drawing read from a DWG, for a DXF save: with the DXF groups of the file's objects that

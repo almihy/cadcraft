@@ -35,11 +35,19 @@ pub struct Names {
     pub mline_style_names: HashMap<u64, String>,
     /// The file's multiline styles, as CADCraft's.
     pub mline_styles: Vec<cadcraft_doc::MLineStyle>,
+    /// Each class's number (500 plus its place among the file's classes), by upper-case name.
+    pub classes: HashMap<String, i32>,
+    /// Block references' clips, by the reference's handle.
+    pub clips: HashMap<u64, cadcraft_doc::ClipBoundary>,
 }
 
 impl Names {
     pub fn of(doc: &acadrust::CadDocument) -> Names {
         let mut n = Names::default();
+        n.clips = crate::xclip::read(doc);
+        for (i, c) in doc.classes.iter().enumerate() {
+            n.classes.entry(c.dxf_name.to_ascii_uppercase()).or_insert(500 + i32::try_from(i).unwrap_or(i32::MAX - 500));
+        }
         for l in doc.layers.iter() {
             n.layers.insert(l.handle.value(), l.name.clone());
         }
@@ -253,7 +261,8 @@ fn kind(e: &EntityType, names: &Names) -> Option<(Common, EntityKind)> {
         }
         EntityType::Insert(i) => {
             let cm = common(&i.common, 0.0, i.normal, false);
-            let ins = insert(i, &cm);
+            let mut ins = insert(i, &cm);
+            ins.clip = names.clips.get(&i.common.handle.value()).cloned();
             (cm, EntityKind::Insert(ins))
         }
         EntityType::Dimension(d) => match d.as_ref() {
@@ -330,8 +339,101 @@ fn kind(e: &EntityType, names: &Names) -> Option<(Common, EntityKind)> {
                 }),
             )
         }
+        EntityType::Ole2Frame(o) => ole_frame(o),
+        EntityType::Extended(x) => match &x.data {
+            ae::ExtendedEntityData::Proxy(p) => {
+                let graphics = { let g = p.graphics.data(); if g.is_empty() { x.common.graphic_data.clone().unwrap_or_default() } else { g } };
+                let body = ProxyBody { class: p.class_id, dwg_version: p.dwg_version, maintenance: p.maintenance_version, from_dxf: p.from_dxf };
+                proxy(&x.common, &body, &graphics, &p.payload, &p.object_ids)
+            }
+            ae::ExtendedEntityData::RegisteredClass(r) => {
+                let Some(class) = names.classes.get(&r.dxf_name.trim().to_ascii_uppercase()).copied() else { return Some(unknown(e, &unknown_name(e))) };
+                let graphics = x.common.graphic_data.clone().unwrap_or_default();
+                let body = ProxyBody { class, dwg_version: 0, maintenance: 0, from_dxf: false };
+                proxy(&x.common, &body, &graphics, &r.payload, &r.object_ids)
+            }
+            _ => unknown(e, &unknown_name(e)),
+        },
         other => unknown(other, &unknown_name(other)),
     })
+}
+
+/// An OLE frame (DXF Reference, OLE2FRAME), kept as the groups CADCraft keeps of it: its corners,
+/// type and data (whose start repeats the corners).
+fn ole_frame(o: &ae::Ole2Frame) -> (Common, EntityKind) {
+    let mut tags = Vec::new();
+    let mut put = |code: i32, value: String| tags.push(cadcraft_doc::RawTag { code, value });
+    let f = |v: f64| format!("{v:?}");
+    put(100, "AcDbEntity".into());
+    put(8, if o.common.layer.is_empty() { "0".into() } else { o.common.layer.clone() });
+    put(100, "AcDbOle2Frame".into());
+    put(70, o.version.to_string());
+    if !o.source_application.is_empty() {
+        put(3, o.source_application.clone());
+    }
+    for (code, p) in [(10, o.upper_left_corner), (11, o.lower_right_corner)] {
+        put(code, f(p.x));
+        put(code + 10, f(p.y));
+        put(code + 20, f(p.z));
+    }
+    put(71, (o.ole_object_type as i16).to_string());
+    put(72, i16::from(o.is_paper_space).to_string());
+    put(73, o.lock_aspect.to_string());
+    let data = o.encoded_payload();
+    if !data.is_empty() {
+        put(90, data.len().to_string());
+        for chunk in data.chunks(127) {
+            put(310, chunk.iter().map(|x| format!("{x:02X}")).collect());
+        }
+    }
+    put(1, "OLE".into());
+    let cm = common(&o.common, 0.0, Vector3::new(0.0, 0.0, 1.0), false);
+    (cm, EntityKind::Unknown(Unknown { dxf_type: "OLE2FRAME".into(), tags }))
+}
+
+/// What a proxy's record says of itself besides its data.
+struct ProxyBody {
+    class: i32,
+    dwg_version: i32,
+    maintenance: i32,
+    from_dxf: bool,
+}
+
+/// Another application's entity, kept as a proxy (DXF Reference, ACAD_PROXY_ENTITY): its class
+/// number, its graphics (what AutoCAD draws without the application), its data and the objects it
+/// refers to, as the groups CADCraft keeps of an entity it doesn't model.
+fn proxy(c: &ae::EntityCommon, b: &ProxyBody, graphics: &[u8], payload: &acadrust::objects::ProxyPayload, refs: &[acadrust::objects::ProxyObjectReference]) -> (Common, EntityKind) {
+    use acadrust::objects::ProxyReferenceKind as K;
+    let mut tags = Vec::new();
+    let mut put = |code: i32, value: String| tags.push(cadcraft_doc::RawTag { code, value });
+    let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02X}")).collect::<String>();
+    put(100, "AcDbEntity".into());
+    put(8, if c.layer.is_empty() { "0".into() } else { c.layer.clone() });
+    put(100, "AcDbProxyEntity".into());
+    put(90, "498".into());
+    put(91, b.class.to_string());
+    put(95, ((b.maintenance << 16) | (b.dwg_version & 0xffff)).to_string());
+    put(70, i32::from(b.from_dxf).to_string());
+    put(92, graphics.len().to_string());
+    for chunk in graphics.chunks(127) {
+        put(310, hex(chunk));
+    }
+    put(93, payload.bit_count.to_string());
+    for chunk in payload.data().chunks(127) {
+        put(310, hex(chunk));
+    }
+    for r in refs {
+        let code = match r.kind {
+            K::Undefined | K::SoftPointer => 330,
+            K::HardPointer => 340,
+            K::SoftOwnership => 350,
+            K::HardOwnership => 360,
+        };
+        put(code, format!("{:X}", r.handle.value()));
+    }
+    put(94, "0".into());
+    let cm = common(c, 0.0, Vector3::new(0.0, 0.0, 1.0), false);
+    (cm, EntityKind::Unknown(Unknown { dxf_type: "ACAD_PROXY_ENTITY".into(), tags }))
 }
 
 /// A lightweight polyline as drawn from above: in a tilted plane its arcs are flattened into

@@ -45,6 +45,19 @@ pub fn build(e: &Entity, prev: Option<&EntityType>, cx: &mut Cx) -> Option<Entit
     let n = c.extrusion;
     let same = |pick: fn(&EntityType) -> bool| prev.filter(|p| pick(p)).cloned();
     let mut out = match &e.kind {
+        // An OLE frame the file had, moved or scaled: its corners (its data's start follows them).
+        EntityKind::Unknown(u) if u.is_ole_frame() => match prev {
+            Some(EntityType::Ole2Frame(p)) => {
+                let mut x = p.clone();
+                let num = |code: i32| u.tags.iter().find(|t| t.code == code).and_then(|t| t.value.trim().parse::<f64>().ok()).filter(|v| v.is_finite());
+                if let (Some(x1), Some(y1), Some(x2), Some(y2)) = (num(10), num(20), num(11), num(21)) {
+                    x.upper_left_corner = Vector3::new(x1, y1, num(30).unwrap_or(x.upper_left_corner.z));
+                    x.lower_right_corner = Vector3::new(x2, y2, num(31).unwrap_or(x.lower_right_corner.z));
+                }
+                EntityType::Ole2Frame(x)
+            }
+            _ => return prev.cloned(),
+        },
         EntityKind::Unknown(_) => return prev.cloned(),
         EntityKind::Line(l) => {
             let mut x = match same(|p| matches!(p, EntityType::Line(_))) { Some(EntityType::Line(x)) => x, _ => ae::Line::default() };

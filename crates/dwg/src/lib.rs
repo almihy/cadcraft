@@ -58,6 +58,7 @@ mod styles;
 mod table;
 mod tables;
 mod write;
+mod xclip;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod worker;
@@ -122,8 +123,9 @@ pub trait Extension {
         std::borrow::Cow::Borrowed(d)
     }
     /// The document a drawing with no DWG source is written into, when the program holds data of
-    /// the drawing this crate can't translate (`None`: an empty document).
-    fn document(&self, _d: &Drawing, _version: acadrust::DxfVersion) -> Result<Option<acadrust::CadDocument>, String> {
+    /// the drawing this crate can't translate (`None`: an empty document), with what of that data
+    /// the DWG can't hold.
+    fn document(&self, _d: &Drawing, _version: acadrust::DxfVersion) -> Result<Option<(acadrust::CadDocument, Unwritten)>, String> {
         Ok(None)
     }
     /// Called once the drawing's state is in the document, before it is written.

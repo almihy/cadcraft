@@ -20,12 +20,14 @@ use crate::{Limits, Unwritten};
 pub fn write(d: &Drawing, v: DxfVersion, ext: &dyn crate::Extension) -> Result<(Vec<u8>, Unwritten), String> {
     let d = ext.prepare(d);
     let d = d.as_ref();
-    let mut doc = match &d.foreign.dwg_source {
-        Some(src) => crate::read::decode(&src.bytes, Limits::DEFAULT)?.0,
+    let (mut doc, mut unwritten) = match &d.foreign.dwg_source {
+        Some(src) => (crate::read::decode(&src.bytes, Limits::DEFAULT)?.0, Unwritten::new()),
         None => ext.document(d, v)?.unwrap_or_default(),
     };
     doc.version = v;
-    let mut unwritten = into_document(d, &mut doc);
+    for (kind, n) in into_document(d, &mut doc) {
+        *unwritten.entry(kind).or_default() += n;
+    }
     ext.write(d, &mut doc);
     for (kind, n) in crate::objects::drop_unwritable(&mut doc) {
         *unwritten.entry(kind).or_default() += n;
@@ -105,10 +107,12 @@ pub fn into_document(d: &Drawing, doc: &mut CadDocument) -> Unwritten {
         }
     }
     doc.header.handle_seed = doc.header.handle_seed.max(next.get());
+    crate::xclip::write(d, doc);
     crate::objects::write_layouts(d, doc);
     crate::objects::write_groups(d, doc);
     crate::objects::write_views(d, doc);
     crate::objects::write_active_vport(d, doc);
+    crate::objects::variable_dictionary(doc);
     for l in &d.layouts {
         for o in doc.objects.values_mut() {
             if let acadrust::objects::ObjectType::Layout(x) = o
@@ -188,7 +192,7 @@ fn container(
                             *slot = new;
                         }
                     }
-                    None => *unwritten.entry(e.kind.dxf_name().to_string()).or_default() += 1,
+                    None => *unwritten.entry(e.kind.dxf_name().trim().to_ascii_uppercase()).or_default() += 1,
                 }
             }
             None => {
@@ -207,7 +211,7 @@ fn container(
                             order.push(h);
                         }
                     }
-                    None => *unwritten.entry(e.kind.dxf_name().to_string()).or_default() += 1,
+                    None => *unwritten.entry(e.kind.dxf_name().trim().to_ascii_uppercase()).or_default() += 1,
                 }
             }
         }

@@ -109,6 +109,8 @@ pub fn read(hd: &HeaderVariables, version: &str) -> Header {
     h.set("LIGHTGLYPHDISPLAY", HVal::Int(i64::from(hd.light_glyph_display)));
     h.set("TILEMODELIGHTSYNCH", HVal::Int(i64::from(hd.tile_model_light_synch)));
     h.set("SOLIDHIST", HVal::Int(i64::from(hd.record_solid_history)));
+    h.set("DIMASSOC", HVal::Int(i64::from(hd.dimension_associativity)));
+    h.set("HIDETEXT", HVal::Int(i64::from(hd.hide_text)));
     for name in ["DIMBLK", "DIMBLK1", "DIMBLK2", "DIMLDRBLK", "HYPERLINKBASE", "CANNOSCALE"] {
         if h.get(name).and_then(HVal::as_str).is_some_and(str::is_empty) {
             h.vars.remove(name);
@@ -131,5 +133,12 @@ pub fn write(h: &Header, hd: &mut HeaderVariables) {
     }
     if let Some(c) = h.get("DIMDSEP").and_then(HVal::as_str).and_then(|s| s.chars().next()) {
         hd.dim_decimal_separator = c;
+    }
+    // A value the variable doesn't take (a hostile file can hold any) is written as AutoCAD's default.
+    if let Some(v) = h.get("DIMASSOC").and_then(HVal::as_i64) {
+        hd.dimension_associativity = i16::try_from(v).ok().filter(|v| (0..=2).contains(v)).unwrap_or(2);
+    }
+    if let Some(v) = h.get("HIDETEXT").and_then(HVal::as_i64) {
+        hd.hide_text = i16::try_from(v).ok().filter(|v| (0..=1).contains(v)).unwrap_or(1);
     }
 }

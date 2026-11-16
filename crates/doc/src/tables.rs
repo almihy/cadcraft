@@ -948,3 +948,43 @@ pub struct Group {
 
 /// Shared ownership helper: blocks are cloned on write.
 pub type BlockRef = Arc<Block>;
+
+impl PageSetup {
+    /// The paper size (DXF groups 44, 45) and plot rotation (group 73) a LAYOUT object holds. Page setups
+    /// keep a portrait size and a landscape flag. The values read from the file are written back
+    /// as they were while they still describe that size and orientation, whatever convention the
+    /// program that wrote them follows. Otherwise a media whose name makes it wider than tall,
+    /// such as `ISO_full_bleed_A3_(420.00_x_297.00_MM)`, gets its size in that order and the
+    /// rotation relative to it, so readers that take the media's size from its name agree with
+    /// groups 44 and 45 (#1463). Other media are written as before.
+    pub fn plot_paper(&self) -> (f64, f64, i64) {
+        let page = self;
+        if let Some((w, h, rotation)) = page.file_paper {
+            let same = |a: f64, b: f64| (a - b).abs() < 1e-6;
+            let landscape = matches!(rotation, 1 | 3) != (w > h);
+            if same(w.min(h), page.width_mm) && same(w.max(h), page.height_mm) && landscape == page.landscape {
+                return (w, h, rotation);
+            }
+        }
+        if media_is_landscape(&page.paper) {
+            let (short, long) = (page.width_mm.min(page.height_mm), page.width_mm.max(page.height_mm));
+            (long, short, i64::from(!page.landscape))
+        } else {
+            (page.width_mm, page.height_mm, i64::from(page.landscape))
+        }
+    }
+}
+
+/// Whether a media name ends in a size wider than tall, like `… (420.00 x 297.00 MM)`.
+pub fn media_is_landscape(paper: &str) -> bool {
+    let name = paper.replace('_', " ");
+    let Some(open) = name.rfind('(') else { return false };
+    let mut sides = name[open + 1..].splitn(2, ['x', 'X', '×']);
+    let num = |s: Option<&str>| {
+        let s = s?.trim_start();
+        let end = s.find(|c: char| !(c.is_ascii_digit() || c == '.')).unwrap_or(s.len());
+        s[..end].parse::<f64>().ok()
+    };
+    matches!((num(sides.next()), num(sides.next())), (Some(w), Some(h)) if w > h)
+}
+

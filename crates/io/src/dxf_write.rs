@@ -123,10 +123,24 @@ pub fn tags(d: &Drawing, version: Version) -> Vec<Tag> {
 /// The DXF of a drawing with other programs' data CADCraft keeps as DXF groups (read from a DXF
 /// file), for acadrust's DXF reader: the groups are declared as the version they were read in
 /// (`from`), and the entity types are the `dwg` version's (MULTILEADER from 2007).
-pub(crate) fn foreign_bridge(d: &Drawing, from: Version, dwg: Version) -> String {
+/// Also returns the names of the classes its CLASSES section lists, in order (a proxy's class
+/// number is 500 plus its class's place there).
+pub(crate) fn foreign_bridge(d: &Drawing, from: Version, dwg: Version) -> (String, Vec<String>) {
     let mut tags = tags_for(d, from, dwg, false);
     bridge_markers(&mut tags);
-    craft_dxf::write_ascii(&tags)
+    let mut classes = Vec::new();
+    let mut in_class = false;
+    for t in &tags {
+        match t.code {
+            0 => in_class = t.str() == "CLASS",
+            1 if in_class => {
+                classes.push(t.str().trim().to_ascii_uppercase());
+                in_class = false;
+            }
+            _ => {}
+        }
+    }
+    (craft_dxf::write_ascii(&tags), classes)
 }
 
 /// Proxy type names and lookup-parameter subclass names in the spelling acadrust's reader takes.

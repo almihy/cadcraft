@@ -195,16 +195,8 @@ pub fn put_page(l: &mut acadrust::objects::Layout, p: &PageSetup, limits: Option
     if crate::read::page_setup(l) == *p && read_limits(l) == limits {
         return;
     }
-    match p.file_paper {
-        Some((w, hgt, r)) if (w.min(hgt) - p.width_mm).abs() < 1e-9 && (w.max(hgt) - p.height_mm).abs() < 1e-9 => {
-            (l.paper_width, l.paper_height, l.plot_rotation) = (w, hgt, i16::try_from(r).unwrap_or(0));
-        }
-        _ => {
-            // Media as wide as tall as its orientation, not turned.
-            (l.paper_width, l.paper_height) = if p.landscape { (p.height_mm, p.width_mm) } else { (p.width_mm, p.height_mm) };
-            l.plot_rotation = 0;
-        }
-    }
+    let (w, hgt, r) = p.plot_paper();
+    (l.paper_width, l.paper_height, l.plot_rotation) = (w, hgt, i16::try_from(r).unwrap_or(0));
     [l.plot_margin_left, l.plot_margin_bottom, l.plot_margin_right, l.plot_margin_top] = p.margins_mm;
     l.plot_paper_units = if p.paper_mm { 1 } else { 0 };
     l.paper_size = p.paper.replace(' ', "_");
@@ -334,4 +326,47 @@ pub fn write_layouts(d: &Drawing, doc: &mut CadDocument) {
         }
     }
     doc.header.paper_space_block_handle = target;
+}
+
+/// The variable dictionary (`AcDbVariableDictionary` in the named object dictionary) AutoCAD
+/// always writes, added with its usual variables when the document has none, for DWGs before
+/// 2018: some readers (Vectric Aspire) take a 2004 DWG without it as empty. A 2018 DWG is left as
+/// it is. `DIMASSOC` and `HIDETEXT` are the drawing's own (as the header has them).
+pub fn variable_dictionary(doc: &mut CadDocument) {
+    if doc.version >= acadrust::DxfVersion::AC1032 {
+        return;
+    }
+    let root = doc.header.named_objects_dict_handle;
+    let has = match doc.objects.get(&root) {
+        Some(ObjectType::Dictionary(r)) => r.entries.iter().any(|(k, _)| k.eq_ignore_ascii_case("AcDbVariableDictionary")),
+        _ => return,
+    };
+    if has {
+        return;
+    }
+    let dict_h = doc.allocate_handle();
+    let mut dict = acadrust::objects::Dictionary::new();
+    dict.handle = dict_h;
+    dict.owner = root;
+    let vars = [
+        ("CANNOSCALE", "1:1".to_string()),
+        ("CMLEADERSTYLE", "Standard".to_string()),
+        ("CTABLESTYLE", "Standard".to_string()),
+        ("DIMASSOC", doc.header.dimension_associativity.to_string()),
+        ("HIDETEXT", doc.header.hide_text.to_string()),
+        ("LAYEREVAL", "0".to_string()),
+        ("LAYERNOTIFY", "0".to_string()),
+    ];
+    for (name, value) in vars {
+        let h = doc.allocate_handle();
+        let mut v = acadrust::objects::DictionaryVariable::new(name, &value);
+        v.handle = h;
+        v.owner_handle = dict_h;
+        doc.objects.insert(h, ObjectType::DictionaryVariable(v));
+        dict.add_entry(name, h);
+    }
+    doc.objects.insert(dict_h, ObjectType::Dictionary(dict));
+    if let Some(ObjectType::Dictionary(r)) = doc.objects.get_mut(&root) {
+        r.add_entry("AcDbVariableDictionary", dict_h);
+    }
 }
