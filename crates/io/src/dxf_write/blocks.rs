@@ -132,6 +132,66 @@ pub(super) fn dim_block_entities(d: &Drawing, dm: &Dimension, layer: &str) -> Ve
     out
 }
 
+/// The drawing with a fresh anonymous `*D` block for each dimension that names none (one drawn,
+/// moved or edited since the file was read, whose old geometry block is stale), as a DWG holds
+/// every dimension's geometry; `None` when every dimension has one. The DWG writer writes the
+/// blocks like any other.
+pub(crate) fn with_dim_blocks(d: &Drawing) -> Option<Drawing> {
+    let needs = |s: &EntityStore| s.iter().any(|e| matches!(&e.kind, EntityKind::Dimension(dm) if dm.block.is_none()));
+    let spaces = std::iter::once(&d.model).chain(d.layouts.iter().map(|l| &l.entities));
+    if !spaces.clone().any(needs) && !d.blocks.values().any(|b| b.xref_path.is_none() && needs(&b.entities)) {
+        return None;
+    }
+    let mut out = d.clone();
+    let fill = |out: &mut Drawing, store: &EntityStore| -> Vec<(Handle, String)> {
+        let mut named = Vec::new();
+        for e in store.iter() {
+            let EntityKind::Dimension(dm) = &e.kind else { continue };
+            if dm.block.is_some() {
+                continue;
+            }
+            let name = out.anonymous_block_name("*D");
+            let mut entities = EntityStore::new();
+            for mut part in dim_block_entities(out, dm, "0") {
+                part.handle = out.new_handle();
+                entities.push(part);
+            }
+            let block = Block { entities, ..Block::new(&name) };
+            out.blocks.insert(name.clone(), std::sync::Arc::new(block));
+            named.push((e.handle, name));
+        }
+        named
+    };
+    let model = out.model.clone();
+    for (h, name) in fill(&mut out, &model) {
+        out.model.modify(h, |e| set_block(e, name));
+    }
+    for i in 0..out.layouts.len() {
+        let store = out.layouts[i].entities.clone();
+        for (h, name) in fill(&mut out, &store) {
+            out.layouts[i].entities.modify(h, |e| set_block(e, name));
+        }
+    }
+    let names: Vec<String> = out.blocks.iter().filter(|(_, b)| b.xref_path.is_none() && needs(&b.entities)).map(|(n, _)| n.clone()).collect();
+    for n in names {
+        let Some(b) = out.blocks.get(&n).cloned() else { continue };
+        let store = b.entities.clone();
+        let named = fill(&mut out, &store);
+        let mut b = (*b).clone();
+        for (h, name) in named {
+            b.entities.modify(h, |e| set_block(e, name));
+        }
+        out.blocks.insert(n, std::sync::Arc::new(b));
+    }
+    Some(out)
+}
+
+fn set_block(e: &mut Entity, name: String) {
+    if let EntityKind::Dimension(dm) = &mut e.kind {
+        dm.block = Some(name);
+    }
+}
+
 /// Rows and columns written for a table (bounded like the renderer).
 pub(super) fn table_size(t: &Table) -> (usize, usize) {
     (t.row_heights.len().min(10_000), t.col_widths.len().min(10_000))

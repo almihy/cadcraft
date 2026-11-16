@@ -147,7 +147,8 @@ pub fn write_noted(d: &Drawing, name: impl AsRef<Path>, opts: &SaveOptions) -> R
 /// The drawing as a DWG of `version`, written straight from the drawing (`cadcraft_dwg::write`):
 /// into the document of the DWG it was read from, so what CADCraft doesn't model goes back out.
 fn write_dwg(d: &Drawing, version: Version) -> Result<(Vec<u8>, Unwritten)> {
-    cadcraft_dwg::write(d, version.code()).map_err(dwg_error)
+    let with_blocks = dxf_write::with_dim_blocks(d);
+    cadcraft_dwg::write(with_blocks.as_ref().unwrap_or(d), version.code()).map_err(dwg_error)
 }
 
 /// Like [`write`], but image formats (PNG, SVG, PDF) show `window` (a model-space rectangle in

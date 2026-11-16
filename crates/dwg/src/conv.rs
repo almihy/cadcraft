@@ -221,27 +221,6 @@ pub fn xdata_app<'a>(tags: &'a [RawTag], app: &str) -> &'a [RawTag] {
     rest.get(..end).unwrap_or(&[])
 }
 
-/// The groups inside `1000 <name>` `1002 {` … `1002 }` of one application's groups.
-pub fn xdata_list<'a>(x: &'a [RawTag], name: &str) -> &'a [RawTag] {
-    let Some(at) = x.iter().position(|t| t.code == 1000 && t.value.trim().eq_ignore_ascii_case(name)) else { return &[] };
-    if !x.get(at + 1).is_some_and(|t| t.code == 1002 && t.value.trim() == "{") {
-        return &[];
-    }
-    let body = x.get(at + 2..).unwrap_or(&[]);
-    let mut depth = 0usize;
-    for (i, t) in body.iter().enumerate() {
-        if t.code == 1002 {
-            match t.value.trim() {
-                "{" => depth += 1,
-                "}" if depth == 0 => return body.get(..i).unwrap_or(&[]),
-                "}" => depth -= 1,
-                _ => {}
-            }
-        }
-    }
-    body
-}
-
 /// The properties every entity has, from acadrust's, with the entity's own thickness and
 /// extrusion (`normal`).
 pub fn common(c: &EntityCommon, thickness: f64, normal: Vector3, dimension: bool) -> Common {
