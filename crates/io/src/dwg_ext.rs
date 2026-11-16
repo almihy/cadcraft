@@ -241,9 +241,9 @@ fn prepare(d: &Drawing, legacy: bool) -> Cow<'_, Drawing> {
     let mut starts: Vec<(cadcraft_doc::Handle, cadcraft_geom::Vec3)> = Vec::new();
     for e in all(base) {
         mleaders |= legacy && matches!(e.kind, EntityKind::MLeader(_));
+        // (An attribute definition's stored start is its own: one with no value is drawn as its tag.)
         let text = match &e.kind {
             EntityKind::Text(t) => Some(t),
-            EntityKind::AttDef(a) => Some(&a.text),
             _ => None,
         };
         if let Some(t) = text {
