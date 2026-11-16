@@ -42,8 +42,9 @@ pub fn into_document(d: &Drawing, doc: &mut CadDocument) -> Unwritten {
     doc.header.handle_seed = doc.header.handle_seed.max(d.handseed);
     crate::header::write(&d.header, &mut doc.header);
     let names = Names::of(doc);
-    tables(d, doc, &names);
+    // Blocks first: dimension styles name their arrowhead blocks by handle.
     blocks(d, doc);
+    tables(d, doc, &names);
     current_records(d, doc);
     {
         let styles = tb::handles(doc.text_styles.iter().map(|s| (s.name.as_str(), s.handle)));

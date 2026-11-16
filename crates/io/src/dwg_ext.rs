@@ -19,6 +19,7 @@ pub(crate) struct Own;
 
 impl cadcraft_dwg::Extension for Own {
     fn read(&self, doc: &CadDocument, d: &mut Drawing) {
+        crate::dwg_foreign::read(doc, d);
         read_records(doc, d);
         read_payloads(doc, d);
     }
@@ -533,11 +534,18 @@ fn foreign_document(d: &Drawing, version: cadcraft_dwg::acadrust::DxfVersion) ->
     let mut doc = std::panic::catch_unwind(move || cadcraft_dwg::acadrust::DxfReader::from_reader(std::io::Cursor::new(dxf.into_bytes())).and_then(|r| r.read()))
         .map_err(|_| "the DWG writer failed on this drawing".to_string())?
         .map_err(|e| format!("DWG: {e}"))?;
-    let mut unwritten = proxy_classes(&mut doc, &classes, version);
-    // A kept proxy object the DXF itself left out: its class can't be named either.
+    // The drawing's proxies whose class it can name (a binary DXF's classes aren't read).
+    let named = |h: u64| match d.entity(cadcraft_doc::Handle(h)).map(|e| &e.kind) {
+        Some(EntityKind::Unknown(u)) => d.foreign.proxy_class(&u.tags).is_some(),
+        _ => true,
+    };
+    proxy_classes(&mut doc, &classes, version, &named, !d.foreign.class_order.is_empty());
+    // The kept proxy objects the DWG doesn't hold: those whose class can't be named, and every
+    // one before 2013.
     let legacy = version < cadcraft_dwg::acadrust::DxfVersion::AC1027;
+    let mut unwritten = crate::Unwritten::new();
     for o in d.foreign.objects.iter().filter(|o| o.kind.trim().eq_ignore_ascii_case("ACAD_PROXY_OBJECT")) {
-        if !legacy && d.foreign.proxy_class(&o.tags).is_none() {
+        if legacy || d.foreign.proxy_class(&o.tags).is_none() {
             *unwritten.entry("ACAD_PROXY_OBJECT".into()).or_default() += 1;
         }
     }
@@ -548,9 +556,15 @@ fn foreign_document(d: &Drawing, version: cadcraft_dwg::acadrust::DxfVersion) ->
 /// lists the classes it writes in its own order, so each proxy read from the DXF (whose classes
 /// are `dxf_classes`) is given the number of its class in the document. One whose class the
 /// document can't name, and every proxy in a DWG before 2013 (acadrust writes no class for one
-/// there), is left out: kept with its number it would name another class. Left-out proxy objects
-/// are counted (entities are counted where the drawing's entities are written).
-fn proxy_classes(doc: &mut CadDocument, dxf_classes: &[String], version: cadcraft_dwg::acadrust::DxfVersion) -> crate::Unwritten {
+/// there), is left out: kept with its number it would name another class. What is left out is
+/// counted by the caller (entities where the drawing's entities are written).
+fn proxy_classes(
+    doc: &mut CadDocument,
+    dxf_classes: &[String],
+    version: cadcraft_dwg::acadrust::DxfVersion,
+    named: &dyn Fn(u64) -> bool,
+    objects_named: bool,
+) {
     use cadcraft_dwg::acadrust::entities::{EntityType, ExtendedEntityData};
     let legacy = version < cadcraft_dwg::acadrust::DxfVersion::AC1027;
     let numbers: std::collections::HashMap<String, i32> =
@@ -567,7 +581,7 @@ fn proxy_classes(doc: &mut CadDocument, dxf_classes: &[String], version: cadcraf
         if let EntityType::Extended(x) = e
             && let ExtendedEntityData::Proxy(p) = &mut x.data
         {
-            match renumber(p.class_id) {
+            match renumber(p.class_id).filter(|_| named(x.common.handle.value())) {
                 Some(n) => p.class_id = n,
                 None => gone_entities.push(x.common.handle),
             }
@@ -579,11 +593,10 @@ fn proxy_classes(doc: &mut CadDocument, dxf_classes: &[String], version: cadcraf
             b.entity_handles.retain(|x| *x != h);
         }
     }
-    let mut unwritten = crate::Unwritten::new();
     let mut gone = std::collections::HashSet::new();
     for (h, o) in doc.objects.iter_mut() {
         if let ObjectType::ProxyObject(p) = o {
-            match renumber(p.class_id) {
+            match renumber(p.class_id).filter(|_| objects_named) {
                 Some(n) => p.class_id = n,
                 None => {
                     gone.insert(*h);
@@ -593,7 +606,6 @@ fn proxy_classes(doc: &mut CadDocument, dxf_classes: &[String], version: cadcraf
     }
     for h in &gone {
         doc.objects.remove(h);
-        *unwritten.entry("ACAD_PROXY_OBJECT".into()).or_default() += 1;
     }
     if !gone.is_empty() {
         for o in doc.objects.values_mut() {
@@ -602,7 +614,6 @@ fn proxy_classes(doc: &mut CadDocument, dxf_classes: &[String], version: cadcraf
             }
         }
     }
-    unwritten
 }
 
 /// A drawing read from a DWG, for a DXF save: with the DXF groups of the file's objects that
@@ -612,9 +623,6 @@ fn proxy_classes(doc: &mut CadDocument, dxf_classes: &[String], version: cadcraf
 /// read from a DWG, or one whose groups are already there.
 pub(crate) fn for_dxf(d: &Drawing) -> Result<Option<Drawing>> {
     let Some(src) = &d.foreign.dwg_source else { return Ok(None) };
-    if !d.foreign.objects.is_empty() {
-        return Ok(None);
-    }
     let dxf = cadcraft_dwg::kept_dxf(&src.bytes).map_err(IoError::Format)?;
     let k = dxf_read::read(&dxf).map_err(|e| IoError::Format(format!("{e} (in the objects of this DWG)")))?;
     let mut out = d.clone();
