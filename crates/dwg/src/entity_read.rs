@@ -47,6 +47,16 @@ impl Names {
     pub fn of(doc: &acadrust::CadDocument) -> Names {
         let mut n = Names::default();
         n.clips = crate::xclip::read(doc);
+        // Styles are named by their dictionary entries (the DXF reader names them so too); a
+        // style's own name stands where it has none.
+        let entry_names = |key: &str| -> HashMap<u64, String> {
+            match crate::styles::named(doc, key).and_then(|h| doc.objects.get(&h)) {
+                Some(acadrust::objects::ObjectType::Dictionary(dc)) => dc.entries.iter().map(|(k, h)| (h.value(), k.clone())).collect(),
+                _ => HashMap::new(),
+            }
+        };
+        let mleader_names = entry_names("ACAD_MLEADERSTYLE");
+        let table_names = entry_names("ACAD_TABLESTYLE");
         if let Some(dict) = crate::styles::named(doc, "ACAD_IMAGE_DICT")
             && let Some(acadrust::objects::ObjectType::Dictionary(dc)) = doc.objects.get(&dict)
         {
@@ -80,12 +90,14 @@ impl Names {
             }
             match o {
                 acadrust::objects::ObjectType::MultiLeaderStyle(m) => {
-                    n.mleader_styles.insert(m.handle.value(), m.name.clone());
+                    let name = mleader_names.get(&m.handle.value()).cloned().filter(|x| !x.is_empty()).unwrap_or_else(|| m.name.clone());
+                    n.mleader_styles.insert(m.handle.value(), name);
                 }
                 acadrust::objects::ObjectType::TableStyle(t) => {
                     let h = t.data_row_style.text_height;
                     let h = if h.is_finite() && h > 0.0 { h } else { cadcraft_doc::TableStyle::default().text_height };
-                    n.table_styles.insert(t.handle.value(), (t.name.clone(), h));
+                    let name = table_names.get(&t.handle.value()).cloned().filter(|x| !x.is_empty()).unwrap_or_else(|| t.name.clone());
+                    n.table_styles.insert(t.handle.value(), (name, h));
                 }
                 acadrust::objects::ObjectType::MLineStyle(m) => {
                     n.mline_style_names.insert(m.handle.value(), m.name.clone());

@@ -163,7 +163,9 @@ fn kinds() -> Vec<EntityKind> {
         EntityKind::Trace(Solid { corners: [v(2.0, 0.0), v(3.0, 0.0), v(2.0, 1.0), v(3.0, 1.0)] }),
         EntityKind::Face3d(Face3d { corners: [Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 1.0), Vec3::new(1.0, 1.0, 2.0), Vec3::new(0.0, 1.0, 1.0)], hidden_edges: 5 }),
         EntityKind::Tolerance(Tolerance { insert: v(3.0, 3.0), dir: Vec3::new(1.0, 0.0, 0.0), style: "Standard".into(), text: "{\\Fgdt;j}%%v0.1".into() }),
-        EntityKind::Wipeout(Wipeout { boundary: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 2.0), Vec2::new(0.0, 2.0)] }),
+        // A boundary as a file holds one: closed by its first vertex again (the reader takes the
+        // vertices as they are, as the DXF reader does).
+        EntityKind::Wipeout(Wipeout { boundary: vec![Vec2::new(0.0, 0.0), Vec2::new(4.0, 0.0), Vec2::new(4.0, 2.0), Vec2::new(0.0, 2.0), Vec2::new(0.0, 0.0)] }),
     ]
 }
 

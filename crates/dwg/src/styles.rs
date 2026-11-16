@@ -28,13 +28,25 @@ pub fn read(doc: &CadDocument, names: &Names, d: &mut Drawing) {
     objects.sort_by_key(|o| handle_of(o));
     for o in objects {
         match o {
-            ObjectType::TableStyle(s) if !s.name.trim().is_empty() => table_styles.push(table_style(s, names)),
+            ObjectType::TableStyle(s) => {
+                let mut st = table_style(s, names);
+                st.name = names.table_styles.get(&s.handle.value()).map(|x| x.0.clone()).unwrap_or(st.name);
+                if !st.name.trim().is_empty() {
+                    table_styles.push(st);
+                }
+            }
             ObjectType::MLineStyle(s) => {
                 if let Some(s) = mline_style(s) {
                     mline_styles.push(s);
                 }
             }
-            ObjectType::MultiLeaderStyle(s) if !s.name.trim().is_empty() => mleader_styles.push(mleader_style(s, names)),
+            ObjectType::MultiLeaderStyle(s) => {
+                let mut st = mleader_style(s, names);
+                st.name = names.mleader_styles.get(&s.handle.value()).cloned().unwrap_or(st.name);
+                if !st.name.trim().is_empty() {
+                    mleader_styles.push(st);
+                }
+            }
             _ => {}
         }
     }
