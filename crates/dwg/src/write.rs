@@ -157,13 +157,31 @@ fn container(doc: &mut CadDocument, br: AHandle, store: &EntityStore, names: &Na
             }
         }
     }
-    // The drawing's order (draw order), what the reader leaves out first.
-    if let Some(record) = doc.block_records.iter_mut().find(|b| b.handle == br)
-        && record.entity_handles != order
-    {
+    // The drawing's order (draw order), what the reader leaves out first; left as the file had
+    // it when the drawing draws in the file's order.
+    let mut read_order: Vec<AHandle> = before.iter().copied().filter(|h| doc.get_entity(*h).is_some()).collect();
+    if let Some(t) = sort_table_of(doc, br) {
+        read_order.sort_by_key(|h| {
+            let k = t.effective_sort_handle(*h).value();
+            (k == 0, k)
+        });
+    }
+    let aside: HashSet<u64> = order.iter().filter(|h| !mine.contains(&h.value())).map(|h| h.value()).collect();
+    let unchanged = read_order.iter().filter(|h| !aside.contains(&h.value())).eq(order.iter().filter(|h| !aside.contains(&h.value())));
+    if unchanged {
+        return;
+    }
+    if let Some(record) = doc.block_records.iter_mut().find(|b| b.handle == br) {
         record.entity_handles.clone_from(&order);
     }
     sort_table(doc, br, &order);
+}
+
+fn sort_table_of(doc: &CadDocument, br: AHandle) -> Option<&acadrust::objects::SortEntitiesTable> {
+    doc.objects.values().find_map(|o| match o {
+        acadrust::objects::ObjectType::SortEntitiesTable(t) if t.block_owner_handle == br => Some(t),
+        _ => None,
+    })
 }
 
 /// A block record's draw order table (SORTENTSTABLE), when it has one, made to give `order`: the
