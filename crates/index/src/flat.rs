@@ -19,12 +19,31 @@ const TEXT: &str = "\u{0}text";
 #[derive(Clone, Debug, PartialEq)]
 pub enum Shape {
     Line([f64; 2], [f64; 2]),
-    Polyline { points: Vec<[f64; 2]>, closed: bool },
-    Circle { c: [f64; 2], r: f64 },
+    Polyline {
+        points: Vec<[f64; 2]>,
+        closed: bool,
+    },
+    Circle {
+        c: [f64; 2],
+        r: f64,
+    },
     /// Degrees counter-clockwise, from `start` to `end`.
-    Arc { c: [f64; 2], r: f64, start: f64, end: f64 },
-    Text { at: [f64; 2], height: f64, angle: f64, text: String },
-    Fill { rings: Vec<Vec<[f64; 2]>>, solid: bool },
+    Arc {
+        c: [f64; 2],
+        r: f64,
+        start: f64,
+        end: f64,
+    },
+    Text {
+        at: [f64; 2],
+        height: f64,
+        angle: f64,
+        text: String,
+    },
+    Fill {
+        rings: Vec<Vec<[f64; 2]>>,
+        solid: bool,
+    },
 }
 
 /// A shape flattened from the drawing: the handle of the model space item it came from (a block
@@ -48,9 +67,7 @@ impl Opened {
             Some(names) => Some(
                 names
                     .iter()
-                    .map(|n| {
-                        self.drawing.layer(n.trim()).map(|l| l.name.to_lowercase()).ok_or_else(|| format!("the drawing has no layer `{n}`"))
-                    })
+                    .map(|n| self.drawing.layer(n.trim()).map(|l| l.name.to_lowercase()).ok_or_else(|| format!("the drawing has no layer `{n}`")))
                     .collect::<Result<_, _>>()?,
             ),
         };
@@ -108,10 +125,7 @@ impl Walk<'_> {
         if !matches!(shape, Shape::Text { .. }) {
             self.lines += 1;
             if self.lines > self.most {
-                return Err(format!(
-                    "the pick takes more than {} lines and shapes; narrow it with `layers` or `box`",
-                    self.most
-                ));
+                return Err(format!("the pick takes more than {} lines and shapes; narrow it with `layers` or `box`", self.most));
             }
         }
         self.out.push(Flat { handle: handle.to_string(), layer: layer.to_string(), shape });

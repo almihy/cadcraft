@@ -55,8 +55,7 @@ pub(crate) fn summary(o: &Opened) -> Value {
     let mut blocks: Vec<(&str, usize, [f64; 2])> = placed.iter().map(|(n, (c, s))| (*n, *c, *s)).collect();
     blocks.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
     let blocks_total = blocks.len();
-    let listed: Vec<Value> =
-        blocks.iter().take(BLOCKS_LISTED).map(|(name, n, size)| json!({"name": name, "placed": n, "size": size})).collect();
+    let listed: Vec<Value> = blocks.iter().take(BLOCKS_LISTED).map(|(name, n, size)| json!({"name": name, "placed": n, "size": size})).collect();
     let sheets: Vec<Value> = o.sheets().iter().map(|l| json!({"name": l.name, "items": l.entities.len()})).collect();
     let styles: Vec<Value> = d.text_styles.iter().map(|s| json!({"name": s.name, "font": s.font})).collect();
     let mut out = json!({

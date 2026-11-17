@@ -89,8 +89,5 @@ fn part_of(whole: &Bounds2, part: Option<[f64; 4]>) -> Result<Bounds2, String> {
         return Err("`box` is [left, top, right, bottom], each from 0 to 1 from the page's top left, right past left and bottom past top".into());
     }
     let (w, h) = (whole.width(), whole.height());
-    Ok(Bounds2::new(
-        Vec2::new(whole.min.x + l * w, whole.max.y - b * h),
-        Vec2::new(whole.min.x + r * w, whole.max.y - t * h),
-    ))
+    Ok(Bounds2::new(Vec2::new(whole.min.x + l * w, whole.max.y - b * h), Vec2::new(whole.min.x + r * w, whole.max.y - t * h)))
 }

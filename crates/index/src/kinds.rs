@@ -4,8 +4,22 @@ use cadcraft_doc::EntityKind;
 
 /// The kinds, as the agent asks for them.
 pub const KINDS: &[&str] = &[
-    "line", "polyline", "circle", "arc", "ellipse", "spline", "point", "text", "block", "dimension", "leader", "hatch", "mline",
-    "image", "table", "other",
+    "line",
+    "polyline",
+    "circle",
+    "arc",
+    "ellipse",
+    "spline",
+    "point",
+    "text",
+    "block",
+    "dimension",
+    "leader",
+    "hatch",
+    "mline",
+    "image",
+    "table",
+    "other",
 ];
 
 /// What kind of item an entity is.
