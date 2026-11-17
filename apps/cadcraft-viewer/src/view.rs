@@ -58,7 +58,7 @@ impl View {
         let fitted = self.fitted.max(1e-300);
         self.scale = (self.scale * factor).clamp(fitted * ZOOM_OUT_MOST, fitted * ZOOM_IN_MOST);
         let after = self.to_world(at);
-        self.center = self.center + (before - after);
+        self.center += before - after;
     }
 
     /// The drawing units a view of `h` points covers.

@@ -534,7 +534,8 @@ impl Viewer {
                 Space::Paper(n) => cadcraft_render::sheet(&scene.drawing, n).map(|sh| sh.bounds()),
                 Space::Model => None,
             };
-            let view = s.views.get(space.tab_name()).copied().unwrap_or_else(|| View::fit(&paper.unwrap_or_else(|| scene.drawing.extents(&space)), w, h));
+            let view =
+                s.views.get(space.tab_name()).copied().unwrap_or_else(|| View::fit(&paper.unwrap_or_else(|| scene.drawing.extents(&space)), w, h));
             let left = s.view;
             s.views.insert(was, left);
             if let Some(scene) = &mut s.scene {

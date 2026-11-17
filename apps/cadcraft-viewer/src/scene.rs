@@ -90,7 +90,11 @@ impl Scene {
     /// A drawing read from a file's bytes (a DWG, a DXF, or a drawing packed by cadcraft-index).
     pub fn read(bytes: &[u8], name: &str) -> Result<(Drawing, f64), String> {
         let t0 = now_ms();
-        let d = if bytes.starts_with(b"CCDRAW\0\0") { cadcraft_index::unpack(bytes)? } else { cadcraft_io::read(bytes, name).map_err(|e| e.to_string())? };
+        let d = if bytes.starts_with(b"CCDRAW\0\0") {
+            cadcraft_index::unpack(bytes)?
+        } else {
+            cadcraft_io::read(bytes, name).map_err(|e| e.to_string())?
+        };
         Ok((d, now_ms() - t0))
     }
 
