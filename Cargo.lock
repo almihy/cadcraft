@@ -880,6 +880,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "cadcraft-viewer"
+version = "0.21.0"
+dependencies = [
+ "cadcraft-color",
+ "cadcraft-doc",
+ "cadcraft-geom",
+ "cadcraft-index",
+ "cadcraft-io",
+ "cadcraft-render",
+ "cadcraft-ui-egui",
+ "eframe",
+ "egui",
+ "egui-wgpu",
+ "js-sys",
+ "log",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "cadcraft-web"
 version = "0.21.0"
 dependencies = [

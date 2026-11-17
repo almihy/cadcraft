@@ -125,6 +125,9 @@ struct Builder<'a> {
     shared_budget: Option<&'a std::sync::atomic::AtomicUsize>,
     /// Transparency (percent) of the entity being drawn.
     transparency: u8,
+    /// Record the layer of each primitive in [`DisplayList::prim_layers`] on screen too (plots
+    /// always do): a viewer then hides and shows layers without building the list again.
+    layers: bool,
 }
 
 /// Upper bound on the block contents drawn per display list (each block reference, MINSERT copy
@@ -340,6 +343,7 @@ impl<'a> Builder<'a> {
             named: self.named,
             shared_budget: self.shared_budget,
             transparency: self.transparency,
+            layers: self.layers,
         }
     }
     /// Take one unit of the block-expansion budget; false once it is spent.
@@ -387,7 +391,7 @@ mod viewports;
 
 pub use dim_draw::{dim_text, dimension_in};
 pub use display::{DImage, DPrim, DisplayList, Kind, MAX_TRANSPARENCY, NO_LAYER, PlotText, VIEWPORT_CONTENT, alpha};
-pub use pipeline::{Options, build, build_entities, build_plot};
+pub use pipeline::{Options, build, build_entities, build_layered, build_plot};
 use props::{default_lineweight, resolve_common};
 use text_entity::text_style;
 pub use text_entity::{layout_mtext_entity, place_text_entity, style_font, text_align};

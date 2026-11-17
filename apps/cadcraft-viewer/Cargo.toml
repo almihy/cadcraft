@@ -1,0 +1,34 @@
+[package]
+name = "cadcraft-viewer"
+description = "CADCraft's drawing view for a host page (Arqiflow's Files): a DWG or DXF drawn by CADCraft's renderer on a canvas, driven from JavaScript (layers, sheets, measure, zoom, theme); the page draws its own controls"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version = "1.95"
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+cadcraft-doc = { workspace = true }
+cadcraft-geom = { workspace = true }
+cadcraft-color = { workspace = true }
+cadcraft-render = { workspace = true }
+cadcraft-io = { workspace = true }
+cadcraft-index = { workspace = true }
+cadcraft-ui-egui = { workspace = true }
+egui = { workspace = true }
+egui-wgpu = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+eframe = { workspace = true, features = ["wgpu"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+web-sys = { version = "0.3", features = ["Window", "Document", "HtmlCanvasElement", "Performance"] }

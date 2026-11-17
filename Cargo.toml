@@ -116,6 +116,13 @@ lto = "thin"
 codegen-units = 16
 debug = 0
 
+# The browser builds a host page loads (apps/cadcraft-viewer for Arqiflow): one unit and whole-program LTO, which
+# reads a large DWG in WebAssembly markedly faster than the thin release build.
+[profile.wasm]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+
 # PDF backends for craft-pdf: pinned to the same reviewed craft-libs revision as craft-pdf itself
 # (Cargo ignores dependency-local patches).
 [patch.crates-io]

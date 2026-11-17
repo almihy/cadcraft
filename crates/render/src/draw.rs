@@ -28,12 +28,12 @@ pub(crate) fn entity(b: &mut Builder, ctx: &Ctx, e: &Entity) {
     entity_parts(b, ctx, e);
     b.named = saved;
     b.transparency = saved_transparency;
-    if b.plotting && b.list.prim_layers.len() < b.list.prims.len() {
+    if (b.plotting || b.layers) && b.list.prim_layers.len() < b.list.prims.len() {
         // What it drew that its block contents didn't claim is on its own layer.
         let layer = entity_layer(ctx, e);
         let from = b.list.prim_layers.len();
         b.list.prim_layers.resize(b.list.prims.len(), layer);
-        if ctx.top == VIEWPORT_CONTENT {
+        if b.plotting && ctx.top == VIEWPORT_CONTENT {
             // Model space seen through a viewport is clipped into the layout's list; the layer
             // travels in the handle until then (see [`take_viewport_layers`]).
             for p in b.list.prims.iter_mut().skip(from) {
