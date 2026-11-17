@@ -124,15 +124,23 @@ impl Opened {
         Bounds2::new(one(b[0]), one(b[1]))
     }
 
+    /// A box asked for in a frame of the drawing's own that is never far out (a sheet), mm, in the
+    /// drawing's units: as given, without the offset.
+    pub(crate) fn box_own(&self, b: [[f64; 2]; 2]) -> Bounds2 {
+        let one = |p: [f64; 2]| Vec2::new(p[0], p[1]) * (1.0 / self.mm);
+        Bounds2::new(one(b[0]), one(b[1]))
+    }
+
     /// The box of the drawing's bulk, drawing units: its model space items' boxes, the strays far
     /// from the rest (a line left kilometres away) left out. None when it draws nothing.
     pub(crate) fn bulk(&self) -> Option<Bounds2> {
         bulk(&self.boxes)
     }
 
-    /// The box round all of model space, drawing units.
+    /// The box round all of model space, drawing units: of what has a finite box (a construction
+    /// line or ray, endless, is left out).
     pub(crate) fn extents(&self) -> Bounds2 {
-        self.boxes.iter().fold(Bounds2::EMPTY, |b, x| b.union(x))
+        self.boxes.iter().filter(|b| !b.is_empty() && b.min.is_finite() && b.max.is_finite()).fold(Bounds2::EMPTY, |b, x| b.union(x))
     }
 
     pub(crate) fn model_items(&self) -> impl Iterator<Item = (&Entity, &Bounds2)> {

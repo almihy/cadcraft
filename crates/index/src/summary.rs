@@ -11,13 +11,20 @@ use crate::{Opened, kind_of};
 
 /// How many blocks the summary names, the most placed first.
 pub const BLOCKS_LISTED: usize = 25;
+/// How many layers it names, those with the most items first (a drawing with its references bound
+/// can have a thousand), and how many text styles and notes from reading the file.
+pub const LAYERS_LISTED: usize = 100;
+pub const STYLES_LISTED: usize = 40;
+pub const NOTES_LISTED: usize = 20;
 
 /// The summary: {unit, mm (millimetres to one unit), offset (when far out), extents [[x0, y0], [x1,
 /// y1]] (mm, of the drawing's bulk; `outer` too when strays lie far beyond it), items (model space),
 /// kinds {kind: count}, sheets [{name, items}], layers [{name, items, kinds, off?, frozen?}] (most
-/// items first), blocks [{name, placed, size: [w, h]}] (most placed first, up to BLOCKS_LISTED),
-/// blocks_total (blocks placed in model space), blocks_defined, text_styles [{name, font}], and
-/// left_out (what reading the file could not take, and why), when anything was.
+/// items first, up to LAYERS_LISTED; `layers_total` when there are more), blocks [{name, placed,
+/// size: [w, h]}] (most placed first, up to BLOCKS_LISTED), blocks_total (blocks placed in model
+/// space), blocks_defined, text_styles [{name, font}] (up to STYLES_LISTED; `text_styles_total`
+/// when there are more), and left_out (what reading the file could not take, and why), when
+/// anything was: its `notes` up to NOTES_LISTED (`notes_total` when there are more).
 pub(crate) fn summary(o: &Opened) -> Value {
     let d = &o.drawing;
     let mut kinds: BTreeMap<&str, usize> = BTreeMap::new();
@@ -37,8 +44,10 @@ pub(crate) fn summary(o: &Opened) -> Value {
     }
     let mut layers: Vec<(&str, usize, BTreeMap<&str, usize>)> = per_layer.into_iter().map(|(l, (n, ks))| (l, n, ks)).collect();
     layers.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+    let layers_total = layers.len();
     let layers: Vec<Value> = layers
         .into_iter()
+        .take(LAYERS_LISTED)
         .map(|(name, n, ks)| {
             let mut row = json!({"name": name, "items": n, "kinds": ks});
             if let Some(l) = d.layer(name) {
@@ -57,7 +66,7 @@ pub(crate) fn summary(o: &Opened) -> Value {
     let blocks_total = blocks.len();
     let listed: Vec<Value> = blocks.iter().take(BLOCKS_LISTED).map(|(name, n, size)| json!({"name": name, "placed": n, "size": size})).collect();
     let sheets: Vec<Value> = o.sheets().iter().map(|l| json!({"name": l.name, "items": l.entities.len()})).collect();
-    let styles: Vec<Value> = d.text_styles.iter().map(|s| json!({"name": s.name, "font": s.font})).collect();
+    let styles: Vec<Value> = d.text_styles.iter().take(STYLES_LISTED).map(|s| json!({"name": s.name, "font": s.font})).collect();
     let mut out = json!({
         "unit": o.unit, "mm": o.mm,
         "items": d.model.len(), "kinds": kinds,
@@ -66,6 +75,12 @@ pub(crate) fn summary(o: &Opened) -> Value {
         "blocks_defined": d.blocks.values().filter(|b| !b.anonymous && !b.name.starts_with('*')).count(),
         "text_styles": styles,
     });
+    if layers_total > LAYERS_LISTED {
+        out["layers_total"] = json!(layers_total);
+    }
+    if d.text_styles.len() > STYLES_LISTED {
+        out["text_styles_total"] = json!(d.text_styles.len());
+    }
     if let Some(bulk) = o.bulk() {
         out["extents"] = json!([o.out(bulk.min), o.out(bulk.max)]);
         let all = o.extents();
@@ -78,7 +93,10 @@ pub(crate) fn summary(o: &Opened) -> Value {
     }
     let mut left_out = serde_json::Map::new();
     if !d.read_notes.is_empty() {
-        left_out.insert("notes".into(), json!(d.read_notes));
+        left_out.insert("notes".into(), json!(d.read_notes.iter().take(NOTES_LISTED).collect::<Vec<_>>()));
+        if d.read_notes.len() > NOTES_LISTED {
+            left_out.insert("notes_total".into(), json!(d.read_notes.len()));
+        }
     }
     if !d.skipped_records.is_empty() {
         left_out.insert("records".into(), json!(d.skipped_records));

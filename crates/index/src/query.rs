@@ -53,8 +53,12 @@ impl Opened {
         if let Some(name) = &q.block {
             return self.block(name, q);
         }
-        let asked = self.asked(q)?;
+        let mut asked = self.asked(q)?;
         let space = self.space(q.sheet.as_deref())?;
+        if let Space::Paper(_) = space {
+            // A sheet is in paper units, never far out: its box is taken as given, without the offset.
+            asked.area = q.area.map(|b| self.box_own(b));
+        }
         let (total, items, next) = match &space {
             Space::Model => self.page(self.model_items().map(|(e, b)| (e, *b)), &asked, &|p| self.out(p)),
             Space::Paper(_) => {

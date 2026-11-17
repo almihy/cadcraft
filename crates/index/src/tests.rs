@@ -175,3 +175,29 @@ fn a_picture_is_drawn_whole_or_in_part() {
     assert!(o.picture(2, None, 400).is_err());
     assert!(o.picture(1, Some([0.5, 0.0, 0.4, 1.0]), 400).is_err());
 }
+
+#[test]
+fn a_sheet_takes_its_box_as_given_in_a_far_drawing_too() {
+    let mut d = plan(499_995.0, 2_699_996.0);
+    d.layouts.push(cadcraft_doc::Layout::new("A-101", 1));
+    let sheet = Space::Paper("A-101".into());
+    d.add(&sheet, on("TITLE"), EntityKind::Text(text(Vec3::new(0.2, 0.1, 0.0), "Ground floor"))).unwrap();
+    let o = Opened::new(d);
+    assert!(o.summary().get("offset").is_some());
+    let on_sheet = ask(&o, json!({"sheet": "a-101", "box": [[100, 0], [300, 200]]}));
+    assert_eq!(on_sheet["total"], 1, "a sheet is never far out: no offset is put on its box");
+    assert_eq!(on_sheet["items"][0]["at"], json!([200.0, 100.0]));
+}
+
+#[test]
+fn the_summary_names_the_most_used_layers_and_says_how_many_there_are() {
+    let mut d = plan(0.0, 0.0);
+    for k in 0..crate::summary::LAYERS_LISTED + 30 {
+        let a = Vec3::new(k as f64, 0.0, 0.0);
+        d.add(&Space::Model, on(&format!("L{k:03}")), EntityKind::Line(Line { a, b: a + Vec3::new(0.5, 0.0, 0.0) })).unwrap();
+    }
+    let s = Opened::new(d).summary();
+    assert_eq!(s["layers"].as_array().unwrap().len(), crate::summary::LAYERS_LISTED);
+    assert_eq!(s["layers_total"], crate::summary::LAYERS_LISTED + 30 + 4);
+    assert_eq!(s["layers"][0]["name"], "FURNITURE", "the most used first");
+}
