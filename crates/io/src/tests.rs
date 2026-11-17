@@ -2076,6 +2076,22 @@ fn reads_utf8_and_code_page_text() {
     assert_eq!(value(&file("AC1015", b"Caf\xe9 \xd8 \\U+56FE\\U+53F7")), "Café Ø 图号");
 }
 
+/// Arabic in an old drawing made on Arabic Windows: its text is in the code page the header names
+/// (`$DWGCODEPAGE` ANSI_1256), in a DXF and in a DWG before 2007 alike.
+#[test]
+fn reads_arabic_in_the_code_page_an_old_drawing_names() {
+    let dxf = b"0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1015\n9\n$DWGCODEPAGE\n3\nANSI_1256\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n0\nTEXT\n8\n0\n10\n0\n20\n0\n40\n1\n1\n\xe3\xce\xd8\xd8 1:100\n0\nENDSEC\n0\nEOF\n";
+    let d = read_dxf(dxf).unwrap();
+    let value = |d: &Drawing| first(d, |k| if let EntityKind::Text(t) = k { Some(t.value.clone()) } else { None });
+    assert_eq!(value(&d), "\u{0645}\u{062E}\u{0637}\u{0637} 1:100");
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let dwg = crate::write_with(&d, "x.dwg", &crate::SaveOptions { version: Some(crate::Version::R2000), binary: false }).unwrap();
+        let back = read(&dwg, "x.dwg").unwrap();
+        assert_eq!(value(&back), "\u{0645}\u{062E}\u{0637}\u{0637} 1:100");
+    }
+}
+
 /// Saving as DWG goes through this DXF and acadrust, which decodes the escapes.
 #[cfg(not(target_arch = "wasm32"))]
 #[test]

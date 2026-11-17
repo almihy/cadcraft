@@ -25,7 +25,13 @@ const MAX_CHARS: usize = 10_000;
 /// Whether a line is laid out here rather than one glyph per character: it has right-to-left
 /// text, or Thai (see the module notes).
 pub(crate) fn needed(s: &str) -> bool {
-    s.chars().any(|c| bidi::is_rtl(c) || is_thai(c))
+    s.chars().any(needed_for)
+}
+
+/// Whether the character `c` needs the shaper: right-to-left (Arabic letters join their
+/// neighbours) or Thai (marks stack).
+pub(crate) fn needed_for(c: char) -> bool {
+    bidi::is_rtl(c) || is_thai(c)
 }
 
 /// Whether `c` is in the Thai block.
@@ -74,7 +80,23 @@ pub(crate) fn shape(primary: Option<&Face>, s: &str, height: f64, width_factor: 
     }
     // A last-resort guard around the bidi and shaping libraries: a panic in them must not take
     // the drawing down with it (the line then falls back to one glyph per character).
-    catch_unwind(AssertUnwindSafe(|| shape_chars(primary, &chars, height, width_factor, oblique, base_rtl))).ok()
+    shape_decoded(primary, &chars, height, width_factor, oblique, base_rtl)
+}
+
+/// [`shape`] for characters already decoded (`%%` codes and `\U+` escapes read): a piece of a
+/// line that another font lays out around it (SHX text, whose fonts lack the piece's letters).
+pub(crate) fn shape_decoded(
+    primary: Option<&Face>,
+    chars: &[(char, bool, bool)],
+    height: f64,
+    width_factor: f64,
+    oblique: f64,
+    base_rtl: Option<bool>,
+) -> Option<Shaped> {
+    if chars.is_empty() || chars.len() > MAX_CHARS {
+        return None;
+    }
+    catch_unwind(AssertUnwindSafe(|| shape_chars(primary, chars, height, width_factor, oblique, base_rtl))).ok()
 }
 
 /// Lay out decoded directional runs, keeping advances and decoration spans for empty glyphs.
