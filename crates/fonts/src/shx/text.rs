@@ -132,6 +132,46 @@ fn pick(t: &ShxText, c: char) -> Option<(&ShxFont, u16)> {
     if u32::from(c) < 0x100 || matches!(c, '⌀' | '∅') { from_main().or_else(from_big) } else { from_big().or_else(from_main) }
 }
 
+/// A piece of a bidi run: one character (an SHX font's shape, or the stroke font's), or a
+/// stretch of complex-script characters neither SHX font has, shaped as one piece.
+enum Segment {
+    Char(usize),
+    Shaped(std::ops::Range<usize>),
+}
+
+/// Whether `c` joins a shaped piece: a right-to-left or Thai character, or a combining mark or
+/// joiner inside one, that neither SHX font draws.
+fn joins(t: &ShxText, c: char, inside: bool) -> bool {
+    let part = crate::complex::needed_for(c) || (inside && (bidi::is_mark(c) || matches!(c, '\u{200C}' | '\u{200D}')));
+    part && pick(t, c).is_none()
+}
+
+/// The pieces of the run `run` of `chars`, in display order (reversed when `rtl`). Arabic the
+/// SHX fonts lack (a style in a Latin SHX font, or one whose fonts are not found) is shaped a
+/// word at a time, so its letters join, rather than drawn one isolated letter after another.
+fn segments(t: &ShxText, chars: &[(char, bool, bool)], run: std::ops::Range<usize>, rtl: bool) -> Vec<Segment> {
+    let mut out = Vec::new();
+    let mut i = run.start;
+    while i < run.end {
+        let c = chars.get(i).map_or(' ', |v| v.0);
+        if !t.vertical && joins(t, c, false) {
+            let mut j = i + 1;
+            while j < run.end && chars.get(j).is_some_and(|v| joins(t, v.0, true)) {
+                j += 1;
+            }
+            out.push(Segment::Shaped(i..j));
+            i = j;
+        } else {
+            out.push(Segment::Char(i));
+            i += 1;
+        }
+    }
+    if rtl {
+        out.reverse();
+    }
+    out
+}
+
 fn finite_or(v: f64, d: f64) -> f64 {
     if v.is_finite() { v } else { d }
 }
@@ -149,8 +189,26 @@ pub(crate) fn shape(t: &ShxText, s: &str, height: f64, width_factor: f64, obliqu
     let mut max_x: f64 = 0.0;
     let runs = if t.vertical { vec![(0..logical.len(), false)] } else { bidi::visual_runs(&logical, None) };
     for (run, rtl) in runs {
-        let order: Box<dyn Iterator<Item = usize>> = if rtl { Box::new(run.rev()) } else { Box::new(run) };
-        for i in order {
+        for seg in segments(t, &chars, run, rtl) {
+            let i = match seg {
+                Segment::Char(i) => i,
+                Segment::Shaped(r) => {
+                    // A word of joined letters neither SHX font has, shaped together by the
+                    // fallback font in the run's direction, as the stroke font's own text is.
+                    let Some(&(_, under, over)) = chars.get(r.start) else { continue };
+                    let piece: Vec<(char, bool, bool)> = chars.get(r).unwrap_or_default().iter().map(|&(c, _, _)| (c, false, false)).collect();
+                    let x0 = pen.x;
+                    if let Some(mut fb) = crate::complex::shape_decoded(None, &piece, h, wf, oblique, Some(rtl)) {
+                        let at = pen;
+                        fb.map(|p| p + at);
+                        max_x = max_x.max(at.x + fb.width);
+                        pen.x += fb.width;
+                        out.extend(fb);
+                    }
+                    spans.push((x0, pen.x, under, over));
+                    continue;
+                }
+            };
             let Some(&(c, under, over)) = chars.get(i) else { continue };
             if bidi::is_format_control(c) {
                 continue;

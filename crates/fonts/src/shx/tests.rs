@@ -483,3 +483,27 @@ fn hebrew_letters_draw_from_their_one_byte_places() {
     let stroke = crate::stroke_advance('ב', 6.0, 1.0);
     assert!((draws(cyr, 'ב') - stroke).abs() < 1e-9);
 }
+
+#[test]
+fn arabic_an_shx_font_lacks_is_shaped_a_word_at_a_time() {
+    // Only with an installed font that has Arabic (the web build's is built in): without one the
+    // letters are missing-glyph boxes either way.
+    if crate::ttf::fallback_for('\u{0633}').is_none() {
+        return;
+    }
+    let t = ShxText::new(Some(std::sync::Arc::new(font(TEXT_FONT))), None, "", false);
+    // A Latin SHX font has no Arabic: the word is joined by the fallback font exactly as the
+    // stroke font's own text joins it, not drawn as isolated letters.
+    let word = "\u{0633}\u{0644}\u{0627}\u{0645}";
+    let shx = super::text::shape(&t, word, 2.5, 1.0, 0.0);
+    let stroke = crate::shape_stroke_dir(word, 2.5, 1.0, 0.0, Some(true));
+    assert_eq!(shx.glyphs, stroke.glyphs);
+    assert!((shx.width - stroke.width).abs() < 1e-9);
+    assert!((super::text::width(&t, word, 2.5, 1.0) - stroke.width).abs() < 1e-9);
+    // With the font's own Latin letter before it, the Arabic word keeps its joined shapes, to the
+    // right of the "A" (a left-to-right line: its first strong character is Latin).
+    let mixed = super::text::shape(&t, &format!("A {word}"), 2.5, 1.0, 0.0);
+    assert_eq!(mixed.glyphs.len(), stroke.glyphs.len());
+    let first_x = |s: &crate::Shaped| s.glyphs.iter().flatten().flatten().map(|p| p.x).fold(f64::INFINITY, f64::min);
+    assert!(first_x(&mixed) > first_x(&stroke));
+}
