@@ -306,6 +306,8 @@ impl Scene {
             "truncated": self.list.truncated,
             "sheets": self.sheets().into_iter().map(|(name, empty)| json!({ "name": name, "empty": empty })).collect::<Vec<_>>(),
             "layers": self.layers_json(),
+            // The style fonts it names that the viewer lacks: the page gives those the firm has.
+            "fonts_missing": crate::fonts::missing(&self.drawing),
             "took": { "read_ms": self.took.read_ms.round(), "list_ms": self.took.list_ms.round() },
         })
     }

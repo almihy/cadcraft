@@ -885,6 +885,7 @@ version = "0.21.0"
 dependencies = [
  "cadcraft-color",
  "cadcraft-doc",
+ "cadcraft-fonts",
  "cadcraft-geom",
  "cadcraft-index",
  "cadcraft-io",
