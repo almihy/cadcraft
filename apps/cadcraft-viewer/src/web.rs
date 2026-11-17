@@ -420,7 +420,28 @@ pub struct Viewer {
     state: Rc<RefCell<State>>,
     listener: Rc<RefCell<Option<js_sys::Function>>>,
     ctx: Rc<RefCell<Option<egui::Context>>>,
+    /// The GPU device, destroyed with the viewer: its buffers are let go at once rather than
+    /// when the page's garbage collector gets to them (hundreds of MB for a large drawing).
+    device: Rc<RefCell<Option<egui_wgpu::wgpu::Device>>>,
+    canvas: web_sys::HtmlCanvasElement,
     runner: eframe::WebRunner,
+}
+
+/// Lose the canvas's WebGL2 context, if it has one (a WebGPU canvas has none: `getContext`
+/// answers null).
+fn lose_webgl(canvas: &web_sys::HtmlCanvasElement) {
+    use js_sys::{Function, Reflect};
+    let Ok(Some(gl)) = canvas.get_context("webgl2") else { return };
+    let ext = Reflect::get(&gl, &"getExtension".into())
+        .ok()
+        .and_then(|f| f.dyn_into::<Function>().ok())
+        .and_then(|f| f.call1(&gl, &"WEBGL_lose_context".into()).ok())
+        .filter(|e| e.is_object());
+    if let Some(ext) = ext
+        && let Some(lose) = Reflect::get(&ext, &"loseContext".into()).ok().and_then(|f| f.dyn_into::<Function>().ok())
+    {
+        let _ = lose.call0(&ext);
+    }
 }
 
 fn err(e: impl std::fmt::Display) -> JsValue {
@@ -435,19 +456,21 @@ pub async fn start(canvas: web_sys::HtmlCanvasElement, dark: bool, webgl: bool) 
     let state = Rc::new(RefCell::new(State::new(dark)));
     let listener = Rc::new(RefCell::new(None));
     let ctx_cell: Rc<RefCell<Option<egui::Context>>> = Rc::new(RefCell::new(None));
+    let device: Rc<RefCell<Option<egui_wgpu::wgpu::Device>>> = Rc::new(RefCell::new(None));
     let mut options = eframe::WebOptions::default();
     if webgl && let eframe::egui_wgpu::WgpuSetup::CreateNew(create) = &mut options.wgpu_options.wgpu_setup {
         create.instance_descriptor.backends = eframe::wgpu::Backends::GL;
     }
     let runner = eframe::WebRunner::new();
-    let (s, l, c) = (state.clone(), listener.clone(), ctx_cell.clone());
+    let (s, l, c, d) = (state.clone(), listener.clone(), ctx_cell.clone(), device.clone());
     runner
         .start(
-            canvas,
+            canvas.clone(),
             options,
             Box::new(move |cc| {
                 *c.borrow_mut() = Some(cc.egui_ctx.clone());
                 if let Some(rs) = &cc.wgpu_render_state {
+                    *d.borrow_mut() = Some(rs.device.clone());
                     let faults = Arc::new(GpuFaults::default());
                     cadcraft_ui_egui::gpu::install(rs, &faults, None);
                     s.borrow_mut().gpu = true;
@@ -461,7 +484,7 @@ pub async fn start(canvas: web_sys::HtmlCanvasElement, dark: bool, webgl: bool) 
         runner.destroy();
         return Err(err("This browser cannot draw it: WebGPU and WebGL2 are both unavailable."));
     }
-    Ok(Viewer { state, listener, ctx: ctx_cell, runner })
+    Ok(Viewer { state, listener, ctx: ctx_cell, device, canvas, runner })
 }
 
 #[wasm_bindgen]
@@ -626,13 +649,20 @@ impl Viewer {
         s.frame_ms_most = 0.0;
     }
 
-    /// Stop drawing and let go of the drawing and the GPU.
+    /// Stop drawing and let go of the drawing and the GPU: the device is destroyed (WebGPU frees
+    /// its memory at once) and a WebGL2 context is lost (the browser keeps only a few).
     pub fn destroy(&self) {
         self.listener.borrow_mut().take();
         if let Ok(mut s) = self.state.try_borrow_mut() {
             s.scene = None;
             s.snaps = None;
+            s.whole = Mesh::new(LAYER_DRAWING);
+            s.part = Mesh::new(LAYER_DRAG);
         }
         self.runner.destroy();
+        if let Some(device) = self.device.borrow_mut().take() {
+            device.destroy();
+        }
+        lose_webgl(&self.canvas);
     }
 }
