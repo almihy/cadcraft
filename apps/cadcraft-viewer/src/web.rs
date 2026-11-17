@@ -448,8 +448,27 @@ fn err(e: impl std::fmt::Display) -> JsValue {
     JsValue::from_str(&e.to_string())
 }
 
+/// A JavaScript error as text: its message (`Error`, `DOMException`), else the value as a string.
+fn js_text(e: &JsValue) -> String {
+    if let Some(s) = e.as_string() {
+        return s;
+    }
+    if let Some(m) = js_sys::Reflect::get(e, &"message".into()).ok().and_then(|m| m.as_string()) {
+        let name = js_sys::Reflect::get(e, &"name".into()).ok().and_then(|n| n.as_string());
+        return match name {
+            Some(n) if !n.is_empty() && n != "Error" => format!("{n}: {m}"),
+            _ => m,
+        };
+    }
+    format!("{e:?}")
+}
+
 /// Start the viewer on `canvas` (sized by the page's CSS), in the dark theme or the light one;
 /// `webgl` keeps it to WebGL2 even where the browser has WebGPU.
+///
+/// It fails with the reason as text. A browser can offer WebGPU and then not give it (no adapter
+/// for the page's GPU, the device refused): the canvas then holds a WebGPU context and cannot get
+/// a WebGL2 one, so the page starts again on a fresh canvas with `webgl`.
 #[wasm_bindgen]
 pub async fn start(canvas: web_sys::HtmlCanvasElement, dark: bool, webgl: bool) -> Result<Viewer, JsValue> {
     let _ = eframe::WebLogger::init(log::LevelFilter::Warn);
@@ -463,7 +482,7 @@ pub async fn start(canvas: web_sys::HtmlCanvasElement, dark: bool, webgl: bool) 
     }
     let runner = eframe::WebRunner::new();
     let (s, l, c, d) = (state.clone(), listener.clone(), ctx_cell.clone(), device.clone());
-    runner
+    let started = runner
         .start(
             canvas.clone(),
             options,
@@ -478,11 +497,16 @@ pub async fn start(canvas: web_sys::HtmlCanvasElement, dark: bool, webgl: bool) 
                 Ok(Box::new(App { state: s, listener: l }))
             }),
         )
-        .await
-        .map_err(|e| err(format!("{e:?}")))?;
+        .await;
+    let api = if webgl { "WebGL2" } else { "WebGPU or WebGL2" };
+    if let Err(e) = started {
+        // The runner listens to the canvas from before the GPU is asked for: let go of it.
+        runner.destroy();
+        return Err(err(format!("{api} could not start: {}", js_text(&e))));
+    }
     if !state.borrow().gpu {
         runner.destroy();
-        return Err(err("This browser cannot draw it: WebGPU and WebGL2 are both unavailable."));
+        return Err(err(format!("{api} could not start: no GPU renderer")));
     }
     Ok(Viewer { state, listener, ctx: ctx_cell, device, canvas, runner })
 }
