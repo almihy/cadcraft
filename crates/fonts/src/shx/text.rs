@@ -35,6 +35,11 @@ pub struct ShxText {
     /// The drawing's one-byte code page (`$DWGCODEPAGE`; Windows Latin-1 when unknown): a
     /// character's byte in it is its shape number in a one-byte font.
     code_page: &'static Encoding,
+    /// The style's fonts draw Arabic letters by their bytes in the drawing's code page: the main
+    /// font has Arabic letters there ([`ShxFont::has_arabic_letters`]) or the big font is an
+    /// Arabic one (not East Asian). Otherwise Arabic text is drawn by the fallback font, shaped
+    /// and right to left, never as a Latin font's accented letters at those bytes.
+    arabic: bool,
 }
 
 impl ShxText {
@@ -43,7 +48,21 @@ impl ShxText {
         let big_encoding = big.as_deref().map_or(encoding_rs::GBK, |b| big_font_encoding(big_name, b.escape_ranges()));
         let big_cjk = big.as_deref().is_some_and(|b| is_cjk_big_font(big_name, b.escape_ranges()));
         let vertical = vertical && main.as_ref().is_some_and(|m| m.is_dual());
-        ShxText { main, big, vertical, big_encoding, big_cjk, code_page: encoding_rs::WINDOWS_1252 }
+        let arabic = main.as_deref().is_some_and(ShxFont::has_arabic_letters) || (big.is_some() && !big_cjk);
+        ShxText { main, big, vertical, big_encoding, big_cjk, code_page: encoding_rs::WINDOWS_1252, arabic }
+    }
+    /// The same fonts, the main font being the one the style names `name` (`romans.shx`): a
+    /// known Latin font (AutoCAD's own stroke fonts and the Hershey fonts that stand in for them)
+    /// has no Arabic letters, whatever its shapes at the Arabic places look like.
+    pub fn main_named(mut self, name: &str) -> ShxText {
+        if is_latin_font(name) || self.main.as_deref().is_some_and(|m| is_latin_font(m.name())) {
+            self.arabic = !self.big_cjk && self.big.is_some();
+        }
+        self
+    }
+    /// Whether the style's fonts draw Arabic letters by their bytes in the drawing's code page.
+    pub fn draws_arabic(&self) -> bool {
+        self.arabic
     }
     /// The same fonts in a drawing whose code page is `code_page` (`$DWGCODEPAGE`, `ANSI_1256`):
     /// a one-byte font draws a character by its byte in that code page, as AutoCAD does, and an
@@ -64,10 +83,14 @@ impl ShxText {
     pub fn code_page(&self) -> &'static str {
         self.code_page.name()
     }
-    /// The byte of `c` in the drawing's code page, if it has one.
+    /// The byte of `c` in the drawing's code page, if it has one. An Arabic letter has none for
+    /// fonts without Arabic letters: it is drawn by the fallback font instead.
     fn byte(&self, c: char) -> Option<u8> {
         if c.is_ascii() {
             return u8::try_from(u32::from(c)).ok();
+        }
+        if !self.arabic && is_arabic(c) {
+            return None;
         }
         let mut buf = [0u8; 4];
         let (bytes, _, errors) = self.code_page.encode(c.encode_utf8(&mut buf));
@@ -76,6 +99,24 @@ impl ShxText {
             _ => None,
         }
     }
+}
+
+/// Whether `c` is an Arabic letter, mark or sign (the Arabic blocks and presentation forms).
+fn is_arabic(c: char) -> bool {
+    matches!(c, '\u{0600}'..='\u{06FF}' | '\u{0750}'..='\u{077F}' | '\u{08A0}'..='\u{08FF}' | '\u{FB50}'..='\u{FDFF}' | '\u{FE70}'..='\u{FEFF}')
+}
+
+/// Whether a font file name (`romans.shx`) or font record name (`Hershey Roman Simplex`) is a
+/// known Latin font: AutoCAD's own stroke fonts and the Hershey fonts.
+fn is_latin_font(name: &str) -> bool {
+    let stem = name.trim().rsplit(['/', '\\']).next().unwrap_or_default().to_ascii_lowercase();
+    let stem = stem.trim_end_matches(".shx");
+    const LATIN: &[&str] = &[
+        "txt", "monotxt", "simplex", "simplex8", "complex", "complex8", "italic", "italic8", "italicc", "italict", "romans", "romand", "romanc",
+        "romant", "scripts", "scriptc", "greeks", "greekc", "gothice", "gothicg", "gothici", "cyrillic", "cyriltlc", "isocp", "isocp2", "isocp3",
+        "isoct", "isoct2", "isoct3", "iso", "geniso", "aehalf", "syastro", "symap", "symath", "symeteo", "symusic",
+    ];
+    LATIN.contains(&stem) || stem.starts_with("hershey")
 }
 
 /// The encoding of a drawing code page name (`ANSI_1256`, `ANSI_936`), if it is one CADCraft knows.

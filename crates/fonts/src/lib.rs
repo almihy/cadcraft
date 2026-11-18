@@ -358,7 +358,11 @@ impl TextFont {
         let builtin = n.is_empty() || n.eq_ignore_ascii_case(BUILTIN_FONT);
         let alt = ttf::font_alt();
         let (alt_main, alt_big) = alt.split_once(',').map_or((alt.as_str(), ""), |(a, b)| (a.trim(), b.trim()));
-        let main = if builtin { None } else { shx::find(n).or_else(|| shx::find(alt_main)) };
+        let (main, main_name) = match if builtin { None } else { shx::find(n) } {
+            Some(f) => (Some(f), n),
+            None if builtin => (None, ""),
+            None => (shx::find(alt_main), alt_main),
+        };
         let (big, big_name) = match big_font.trim() {
             "" => (None, ""),
             b => match shx::find(b) {
@@ -367,7 +371,9 @@ impl TextFont {
             },
         };
         if main.is_some() || big.is_some() {
-            return TextFont::Shx(std::sync::Arc::new(shx::ShxText::new(main, big, big_name, vertical).in_code_page(code_page)));
+            return TextFont::Shx(std::sync::Arc::new(
+                shx::ShxText::new(main, big, big_name, vertical).main_named(main_name).in_code_page(code_page),
+            ));
         }
         if builtin {
             return TextFont::Stroke;

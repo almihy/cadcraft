@@ -22,5 +22,6 @@ pub(super) fn parse(bytes: &[u8]) -> Result<ShxFont, ShxError> {
         records: font.records,
         cache: RwLock::default(),
         hebrew: std::sync::OnceLock::new(),
+        arabic: std::sync::OnceLock::new(),
     })
 }

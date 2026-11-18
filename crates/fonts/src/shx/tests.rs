@@ -509,12 +509,12 @@ fn arabic_an_shx_font_lacks_is_shaped_a_word_at_a_time() {
 }
 
 /// A one-byte Arabic font laid out as old Arabic SHX fonts are: letters at their places in the
-/// drawing's code page (here Windows-1256: alef 0xC7, lam 0xE1, meem 0xE3), each shape a vertical
-/// stroke `n` units high (n = the code's low five bits) that then moves the pen `n` units left, so
-/// the font itself writes right to left.
+/// drawing's code page (Windows-1256: alef 0xC7, lam 0xE1, meem 0xE3 and the rest of the
+/// alphabet), each shape a vertical stroke `n` units high (n = the code's low five bits) that then
+/// moves the pen `n` units left, so the font itself writes right to left.
 fn arabic_font() -> ShxFont {
     let mut src = String::from("*0,4,arabic\n6,2,0,0\n*32,4,space\n2,8,(-2,0),0\n");
-    for c in [0xC7u16, 0xE1, 0xE3] {
+    for c in super::ARABIC_PLACES.iter().map(|p| p.0).filter(|c| c & 0x1F != 0) {
         let n = c & 0x1F;
         src.push_str(&format!("*0{c:X},9,l\n1,8,(0,{n}),2,8,(-{n},-{n}),0\n"));
     }
@@ -584,4 +584,75 @@ fn arabic_big_font_pairs_the_drawing_bytes() {
     let cjk = font("*BIGFONT 1,1,0A1,0FE\n*0,4,x\n8,0,0,0\n*0FFFF,2,x\n010,0\n");
     let t = ShxText::new(None, Some(std::sync::Arc::new(cjk)), "custom.shx", false).in_code_page("ANSI_950");
     assert_eq!(t.big_font_encoding(), "Big5");
+}
+
+/// A one-byte Latin font as AutoCAD's and the Hershey fonts are: base letters, and at their
+/// Windows Latin-1 places the accented letters, each its base letter (a subshape) and an accent.
+/// Base letter k is k + 2 units wide; the accent over place c is (c & 0xF) + 1 units high.
+fn latin_font() -> ShxFont {
+    let mut src = String::from("*0,4,latin\n6,2,0,0\n*32,3,space\n2,060,0\n");
+    let bases = b"ACEINOUYanouy";
+    for (k, b) in bases.iter().enumerate() {
+        src.push_str(&format!("*{b},12,base\n1,8,(0,6),8,({},0),2,8,(2,-6),0\n", k + 1));
+    }
+    let places = super::ARABIC_PLACES.iter().filter(|p| p.1 != 0).map(|p| (p.0, p.1)).chain([(0xE9, b'E')]);
+    for (c, b) in places {
+        let j = (c & 0xF) + 1;
+        src.push_str(&format!("*{c},15,accented\n7,{b},2,8,(-1,1),1,8,(0,{j}),2,8,(1,-{}),0\n", j + 1));
+    }
+    font(&src)
+}
+
+/// In an Arabic drawing (ANSI_1256), Arabic text in a style whose SHX font is a Latin font is not
+/// drawn as that font's accented letters at the Arabic letters' bytes: the font has no Arabic, so
+/// the text is joined and set right to left by the fallback font, as with no SHX font at all.
+/// The font's own characters (é, which Windows-1256 keeps at 0xE9 too) still come from it.
+#[test]
+fn arabic_in_a_latin_shx_font_is_drawn_by_the_fallback() {
+    let latin = latin_font();
+    assert!(!latin.has_arabic_letters());
+    assert!(arabic_font().has_arabic_letters());
+    let t = ShxText::new(Some(std::sync::Arc::new(latin)), None, "", false).in_code_page("ANSI_1256");
+    assert!(!t.draws_arabic());
+    // é is the font's shape at 0xE9: E (base 3, 5 wide) with an accent, advancing 5.
+    assert!((super::text::width(&t, "\u{00E9}", 6.0, 1.0) - 5.0).abs() < 1e-9);
+    let word = "\u{0633}\u{0644}\u{0627}\u{0645}";
+    let sh = super::text::shape(&t, word, 2.5, 1.0, 0.0);
+    // None of the font's shapes is drawn for it (they'd be strokes, the fallback's are glyphs).
+    let fb = crate::ttf::fallback_for('\u{0633}').is_some();
+    assert!(!fb || sh.strokes.is_empty(), "{:?}", sh.strokes);
+    if fb {
+        let stroke = crate::shape_stroke_dir(word, 2.5, 1.0, 0.0, Some(true));
+        assert_eq!(sh.glyphs, stroke.glyphs);
+        assert!((sh.width - stroke.width).abs() < 1e-9);
+        assert!((super::text::width(&t, word, 2.5, 1.0) - stroke.width).abs() < 1e-9);
+    }
+    // A font the style names as one of AutoCAD's Latin fonts (or a Hershey stand-in for one) has
+    // no Arabic whatever its shapes look like.
+    let named = ShxText::new(Some(std::sync::Arc::new(arabic_font())), None, "", false).main_named("romans.shx").in_code_page("ANSI_1256");
+    assert!(!named.draws_arabic());
+    assert!(!fb || super::text::shape(&named, word, 2.5, 1.0, 0.0).strokes.is_empty());
+    // A few odd shapes at those places, or one shape repeated there, aren't an Arabic alphabet.
+    assert!(!font("*0,4,x\n6,2,0,0\n*199,9,l\n1,8,(0,7),2,8,(-7,-7),0\n").has_arabic_letters());
+    let mut boxes = String::from("*0,4,x\n6,2,0,0\n");
+    for c in super::ARABIC_PLACES.iter().map(|p| p.0) {
+        boxes.push_str(&format!("*{c},4,box\n1,040,04C,0\n"));
+    }
+    assert!(!font(&boxes).has_arabic_letters());
+}
+
+/// A style with an East Asian big font and a Latin main font has no Arabic either; one with an
+/// Arabic big font draws the drawing's bytes as AutoCAD does.
+#[test]
+fn a_big_font_draws_arabic_only_when_it_is_an_arabic_one() {
+    let cjk = font("*BIGFONT 1,1,081,09F\n*0,4,x\n8,0,0,0\n*082A0,2,x\n010,0\n");
+    let t = ShxText::new(Some(std::sync::Arc::new(latin_font())), Some(std::sync::Arc::new(cjk)), "gbcbig.shx", false).in_code_page("ANSI_1256");
+    assert!(!t.draws_arabic());
+    let fb = crate::ttf::fallback_for('\u{0627}').is_some();
+    assert!(!fb || super::text::shape(&t, "\u{0627}\u{0644}", 6.0, 1.0, 0.0).strokes.is_empty());
+    let arabic = font("*BIGFONT 1,1,0CA,0CA\n*0,4,arabic big\n6,0,0,0\n*0CA41,9,pair\n1,8,(0,5),2,8,(-5,-5),0\n");
+    let t = ShxText::new(Some(std::sync::Arc::new(latin_font())), Some(std::sync::Arc::new(arabic)), "arabnas2.shx", false)
+        .main_named("romans.shx")
+        .in_code_page("ANSI_1256");
+    assert!(t.draws_arabic());
 }

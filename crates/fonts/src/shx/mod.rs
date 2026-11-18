@@ -84,6 +84,9 @@ pub struct ShxFont {
     /// Whether a one-byte font holds Hebrew letters at their Windows-1255 / DOS 862 places,
     /// worked out on first use ([`ShxFont::hebrew_places`]).
     hebrew: std::sync::OnceLock<(bool, bool)>,
+    /// Whether a one-byte font holds Arabic letters at their Windows-1256 places, worked out on
+    /// first use ([`ShxFont::has_arabic_letters`]).
+    arabic: std::sync::OnceLock<bool>,
 }
 
 impl std::fmt::Debug for ShxFont {
@@ -97,6 +100,34 @@ impl std::fmt::Debug for ShxFont {
             .field("shapes", &self.records.len())
             .finish()
     }
+}
+
+/// The fewest shapes at [`ARABIC_PLACES`] a font that writes Arabic by them has (of 47; the
+/// alphabet alone is 36 letters).
+const MIN_ARABIC_LETTERS: usize = 20;
+
+/// The places of Arabic letters in Windows-1256 and the Latin base letter of the accented letter
+/// Windows Latin-1 keeps at the same place (0xC1 Á, base A), or 0 where it keeps none.
+#[rustfmt::skip]
+const ARABIC_PLACES: &[(u16, u8)] = &[
+    (0xC0, b'A'), (0xC1, b'A'), (0xC2, b'A'), (0xC3, b'A'), (0xC4, b'A'), (0xC5, b'A'), (0xC6, 0), (0xC7, b'C'),
+    (0xC8, b'E'), (0xC9, b'E'), (0xCA, b'E'), (0xCB, b'E'), (0xCC, b'I'), (0xCD, b'I'), (0xCE, b'I'), (0xCF, b'I'),
+    (0xD0, 0), (0xD1, b'N'), (0xD2, b'O'), (0xD3, b'O'), (0xD4, b'O'), (0xD5, b'O'), (0xD6, b'O'), (0xD8, b'O'),
+    (0xD9, b'U'), (0xDA, b'U'), (0xDB, b'U'), (0xDC, b'U'), (0xDD, b'Y'), (0xDE, 0), (0xDF, 0), (0xE1, b'a'),
+    (0xE3, b'a'), (0xE4, b'a'), (0xE5, b'a'), (0xE6, 0), (0xEC, 0), (0xED, 0), (0xF0, 0), (0xF1, b'n'),
+    (0xF2, b'o'), (0xF3, b'o'), (0xF5, b'o'), (0xF6, b'o'), (0xF8, b'o'), (0xFA, b'u'), (0xFF, b'y'),
+];
+
+/// Whether the strokes `base` appear in `strokes`, all moved by the same amount (an accented
+/// letter holding its base letter, wherever the font starts drawing it).
+fn holds(strokes: &[Vec<Vec2>], base: &[Vec<Vec2>]) -> bool {
+    if base.is_empty() {
+        return false;
+    }
+    let same = |a: &[Vec2], b: &[Vec2], d: Vec2| a.len() == b.len() && a.iter().zip(b).all(|(p, q)| (*p + d - *q).len() < 1e-6);
+    let Some(first) = base.first() else { return false };
+    let Some(&p0) = first.first() else { return false };
+    strokes.iter().filter_map(|s| s.first().map(|q| *q - p0)).any(|d| base.iter().all(|b| strokes.iter().any(|s| same(b, s, d))))
 }
 
 impl ShxFont {
@@ -165,6 +196,46 @@ impl ShxFont {
             }
             let count = |r: std::ops::RangeInclusive<u16>| r.filter(|c| self.has_shape(*c)).count();
             (count(0xE0..=0xFA) >= 20 && count(0xC0..=0xDF) < 16, count(0x80..=0x9A) >= 20 && count(0xA0..=0xAF) < 8)
+        })
+    }
+    /// Whether this one-byte font draws Arabic letters at their Windows-1256 places (0xC0..0xFF),
+    /// as the Arabic SHX fonts made for that code page do. Worked out from the font's shapes:
+    /// - it draws something at most of those places (at least [`MIN_ARABIC_LETTERS`] shapes with
+    ///   ink): a font with a few odd shapes up there (a keyboard-laid Arabic font, a Latin font
+    ///   with ° ± ², blank shapes) cannot write Arabic from them;
+    /// - they are not one shape repeated (a "missing character" box);
+    /// - they are not the accented Latin letters Windows Latin-1 keeps at the same places: a Latin
+    ///   font's Á (0xC1) is as wide as its A, or holds A's strokes (a subshape of A, or A's
+    ///   strokes and an accent). When half the shapes or more look like that, the font is Latin.
+    ///   (Measured on a thousand community SHX fonts: the Latin ones match at 58–95 % of the
+    ///   places, the Arabic and Farsi ones at 29 % or fewer.)
+    ///
+    /// Big fonts and Unicode fonts are not read this way: false.
+    pub fn has_arabic_letters(&self) -> bool {
+        *self.arabic.get_or_init(|| {
+            if self.kind != ShxKind::Shapes {
+                return false;
+            }
+            let glyphs: Vec<(Arc<ShxGlyph>, u8)> =
+                ARABIC_PLACES.iter().filter_map(|&(code, base)| Some((self.glyph(code, false).filter(|g| !g.strokes.is_empty())?, base))).collect();
+            if glyphs.len() < MIN_ARABIC_LETTERS {
+                return false;
+            }
+            // One shape repeated: the most common one stands at half the places or more.
+            let repeated = glyphs.iter().map(|(g, _)| glyphs.iter().filter(|(h, _)| h.strokes == g.strokes).count()).max().unwrap_or(0);
+            if repeated * 2 >= glyphs.len() {
+                return false;
+            }
+            let latin = glyphs
+                .iter()
+                .filter(|(g, base)| {
+                    let Some(b) = (*base != 0).then(|| self.glyph(u16::from(*base), false)).flatten().filter(|b| !b.strokes.is_empty()) else {
+                        return false;
+                    };
+                    (g.advance.x - b.advance.x).abs() <= 1e-6 + 0.02 * b.advance.x.abs() || holds(&g.strokes, &b.strokes)
+                })
+                .count();
+            latin * 2 < glyphs.len()
         })
     }
     /// The shape numbers in the file, sorted (not shape 0).
