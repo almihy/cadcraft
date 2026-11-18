@@ -187,16 +187,25 @@ impl Opened {
 /// a multileader's text.
 fn words(o: &Opened, e: &Entity) -> Option<String> {
     match &e.kind {
-        EntityKind::Text(t) => Some(t.value.clone()),
-        EntityKind::MText(t) => Some(cadcraft_fonts::plain_mtext(&t.contents)),
-        EntityKind::AttDef(a) => Some(format!("{} {}", a.tag, a.text.value)),
+        EntityKind::Text(t) => Some(with_shown(o, &t.style, t.value.clone())),
+        EntityKind::MText(t) => Some(with_shown(o, &t.style, cadcraft_fonts::plain_mtext(&t.contents))),
+        EntityKind::AttDef(a) => Some(format!("{} {}", a.tag, with_shown(o, &a.text.style, a.text.value.clone()))),
         EntityKind::Insert(i) => {
-            let vals: Vec<&str> = i.attribs.iter().map(|a| a.text.value.as_str()).filter(|v| !v.is_empty()).collect();
+            let vals: Vec<String> =
+                i.attribs.iter().filter(|a| !a.text.value.is_empty()).map(|a| with_shown(o, &a.text.style, a.text.value.clone())).collect();
             (!vals.is_empty()).then(|| vals.join(" "))
         }
         EntityKind::Dimension(d) => Some(dim_text(o, d)),
         EntityKind::MLeader(m) => m.text.as_ref().map(|t| cadcraft_fonts::plain_mtext(&t.contents)),
         _ => None,
+    }
+}
+
+/// A text's words and, when its font draws Arabic for Latin keys, the Arabic it shows: either finds it.
+fn with_shown(o: &Opened, style: &str, text: String) -> String {
+    match o.shown(style, &text) {
+        Some(s) => format!("{text} {s}"),
+        None => text,
     }
 }
 
@@ -222,7 +231,8 @@ fn deg(radians: f64) -> f64 {
 /// An item given out, points through `pt`, with how many points it holds: {h, kind, layer, ...}:
 /// line {points}; polyline {points, closed, bulges?}; circle {c, r}; arc {c, r, start, end} (degrees
 /// counter-clockwise); ellipse {c, major, ratio, start?, end?}; spline {points, closed}; point {at};
-/// text {text, at, height, angle}; block {name, at, angle, scale, box, attributes?, array?};
+/// text {text, shows? (the Arabic a font drawing Arabic letters for Latin keys shows), at, height,
+/// angle}; block {name, at, angle, scale, box, attributes?, attributes_show?, array?};
 /// dimension {text, at}; leader {points, text?}; hatch {rings, solid, pattern}; mline {points}; image
 /// and table {box}; other {type, box}.
 fn item(o: &Opened, e: &Entity, b: &Bounds2, pt: &dyn Fn(Vec2) -> [f64; 2]) -> (Value, usize) {
@@ -282,12 +292,19 @@ fn item(o: &Opened, e: &Entity, b: &Bounds2, pt: &dyn Fn(Vec2) -> [f64; 2]) -> (
         EntityKind::Point(p) => set("at", json!(pt(p.p.xy()))),
         EntityKind::Text(t) => {
             set("text", json!(t.value));
+            if let Some(s) = o.shown(&t.style, &t.value) {
+                set("shows", json!(s));
+            }
             set("at", json!(pt(t.justify_point())));
             set("height", json!(o.len(t.height)));
             set("angle", json!(deg(t.rotation)));
         }
         EntityKind::MText(t) => {
-            set("text", json!(cadcraft_fonts::plain_mtext(&t.contents)));
+            let words = cadcraft_fonts::plain_mtext(&t.contents);
+            if let Some(s) = o.shown(&t.style, &words) {
+                set("shows", json!(s));
+            }
+            set("text", json!(words));
             set("at", json!(pt(t.insert.xy())));
             set("height", json!(o.len(t.height)));
             set("angle", json!(deg(t.rotation)));
@@ -295,6 +312,9 @@ fn item(o: &Opened, e: &Entity, b: &Bounds2, pt: &dyn Fn(Vec2) -> [f64; 2]) -> (
         EntityKind::AttDef(a) => {
             set("tag", json!(a.tag));
             set("text", json!(a.text.value));
+            if let Some(s) = o.shown(&a.text.style, &a.text.value) {
+                set("shows", json!(s));
+            }
             set("at", json!(pt(a.text.justify_point())));
             set("height", json!(o.len(a.text.height)));
         }
@@ -308,6 +328,11 @@ fn item(o: &Opened, e: &Entity, b: &Bounds2, pt: &dyn Fn(Vec2) -> [f64; 2]) -> (
                 i.attribs.iter().filter(|a| !a.text.value.is_empty()).map(|a| (a.tag.clone(), json!(a.text.value))).collect();
             if !attrs.is_empty() {
                 set("attributes", Value::Object(attrs));
+            }
+            let shown: serde_json::Map<String, Value> =
+                i.attribs.iter().filter_map(|a| o.shown(&a.text.style, &a.text.value).map(|s| (a.tag.clone(), json!(s)))).collect();
+            if !shown.is_empty() {
+                set("attributes_show", Value::Object(shown));
             }
             if i.cols > 1 || i.rows > 1 {
                 set("array", json!({"cols": i.cols, "rows": i.rows}));

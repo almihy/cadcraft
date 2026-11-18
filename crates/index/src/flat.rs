@@ -224,13 +224,16 @@ impl Walk<'_> {
                 at: o.out(t.justify_point()),
                 height: o.len(t.height),
                 angle: t.rotation.to_degrees().rem_euclid(360.0),
-                text: t.value.clone(),
+                text: o.shown(&t.style, &t.value).unwrap_or_else(|| t.value.clone()),
             },
             EntityKind::MText(t) => Shape::Text {
                 at: o.out(t.insert.xy()),
                 height: o.len(t.height),
                 angle: t.rotation.to_degrees().rem_euclid(360.0),
-                text: cadcraft_fonts::plain_mtext(&t.contents),
+                text: {
+                    let s = cadcraft_fonts::plain_mtext(&t.contents);
+                    o.shown(&t.style, &s).unwrap_or(s)
+                },
             },
             _ => return None,
         })

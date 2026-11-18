@@ -28,6 +28,8 @@ use std::sync::OnceLock;
 use cadcraft_doc::{BlockBoundsCache, Drawing, Entity, Space, entity_bounds_cached};
 use cadcraft_geom::{Bounds2, Vec2};
 
+/// Fonts a host gives at run time (a firm's, the computer's, stand-ins): what a picture draws with.
+pub use cadcraft_fonts::given;
 pub use flat::{Flat, Shape};
 pub use kinds::{KINDS, kind_of};
 pub use pack::{FORMAT, pack, unpack};
@@ -91,6 +93,20 @@ impl Opened {
     /// What the drawing holds, in short (see [`summary`](crate::summary)).
     pub fn summary(&self) -> serde_json::Value {
         summary::summary(self)
+    }
+
+    /// The fonts the drawing's text styles name that are not here (registered, or built in), each
+    /// once, as the styles spell them: what the host may find and give
+    /// ([cadcraft_fonts::given::add_font]) before a picture, so its text draws as the drawing's.
+    pub fn fonts_missing(&self) -> Vec<String> {
+        cadcraft_fonts::given::missing(self.drawing.text_styles.iter().map(|ts| (ts.font.as_str(), ts.big_font.as_str())))
+    }
+
+    /// The Arabic a text in style `style` shows when the style's font draws Arabic letters for
+    /// Latin keys (`xarab.shx`: "Hgl" shows «الم»), else None ([cadcraft_fonts::keyboard]).
+    pub fn shown(&self, style: &str, text: &str) -> Option<String> {
+        let ts = self.drawing.text_style(style)?;
+        cadcraft_fonts::keyboard::shown(&ts.font, text)
     }
 
     /// The offset taken off every point given out, mm ([0, 0] for a drawing near its origin).

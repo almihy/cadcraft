@@ -17,6 +17,8 @@
 
 pub mod bidi;
 mod complex;
+pub mod given;
+pub mod keyboard;
 mod linebreak;
 mod mtext;
 pub mod shx;

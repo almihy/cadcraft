@@ -104,6 +104,10 @@ impl ShxFont {
     pub fn parse(bytes: &[u8]) -> Result<ShxFont, ShxError> {
         parse::parse(bytes)
     }
+    /// The font's glyph data, as read from its file.
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
     pub fn kind(&self) -> ShxKind {
         self.kind
     }
