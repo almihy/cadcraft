@@ -342,6 +342,13 @@ impl TextFont {
     /// as a TrueType font; else the stroke font (which also draws the characters a missing big
     /// font would have). `vertical` is the style's vertical flag, honoured by fonts made for it.
     pub fn resolve_style(font: &str, big_font: &str, vertical: bool) -> TextFont {
+        TextFont::resolve_style_in(font, big_font, vertical, "")
+    }
+
+    /// [`TextFont::resolve_style`] for a drawing in code page `code_page` (its `$DWGCODEPAGE`,
+    /// `ANSI_1256`): SHX fonts draw a character by its byte in that code page, as AutoCAD does
+    /// ([`shx::ShxText::in_code_page`]). Empty or unknown: Windows Latin-1.
+    pub fn resolve_style_in(font: &str, big_font: &str, vertical: bool, code_page: &str) -> TextFont {
         if let Some(f) = ttf::find(font) {
             return TextFont::Outline(f);
         }
@@ -358,7 +365,7 @@ impl TextFont {
             },
         };
         if main.is_some() || big.is_some() {
-            return TextFont::Shx(std::sync::Arc::new(shx::ShxText::new(main, big, big_name, vertical)));
+            return TextFont::Shx(std::sync::Arc::new(shx::ShxText::new(main, big, big_name, vertical).in_code_page(code_page)));
         }
         if builtin {
             return TextFont::Stroke;
@@ -382,6 +389,10 @@ pub struct Shaped {
     pub strokes: Vec<Vec<Vec2>>,
     pub glyphs: Vec<Vec<Vec<Vec2>>>,
     pub width: f64,
+    /// Where the line's box starts, left of the pen's start: 0, or less for a font whose shapes
+    /// move the pen leftward (an Arabic SHX font drawing right to left from the insertion point).
+    /// The box runs from `start` to `start + width`.
+    pub start: f64,
     /// The outline glyphs as font glyphs: which face and glyph each of [`Shaped::glyphs`] is,
     /// and where it sits.
     pub text: Vec<TextGlyph>,
@@ -617,8 +628,8 @@ fn ink_middle(sh: &Shaped) -> Option<f64> {
 fn justify_offset(font: &TextFont, sh: &Shaped, height: f64, h: Align, v: VAlign) -> Vec2 {
     let dx = match h {
         Align::Left | Align::Aligned | Align::Fit => 0.0,
-        Align::Center | Align::Middle => -sh.width / 2.0,
-        Align::Right => -sh.width,
+        Align::Center | Align::Middle => -(sh.start + sh.width / 2.0),
+        Align::Right => -(sh.start + sh.width),
     };
     let dy = match (h, v) {
         (Align::Middle, _) => -ink_middle(sh).unwrap_or(height / 2.0),
@@ -674,7 +685,7 @@ pub fn place(font: &TextFont, s: &str, p: &TextParams) -> (Shaped, Bounds2) {
         }
     }
     let mut sh = shape_line_dir(font, s, height, wf, p.oblique, TEXT_BASE_RTL);
-    let width = sh.width;
+    let (x0, x1) = (sh.start, sh.start + sh.width);
     // Every justification but baseline-left (and aligned/fit, which span both points) is placed by
     // its alignment point (DXF group 11); the insertion point (group 10) is then a computed point.
     let origin = match (p.h, p.v) {
@@ -689,7 +700,7 @@ pub fn place(font: &TextFont, s: &str, p: &TextParams) -> (Shaped, Bounds2) {
     };
     sh.map(xf);
     let depth = bottom_depth(font, height);
-    let bb = Bounds2::from_points([Vec2::new(0.0, -depth), Vec2::new(width, -depth), Vec2::new(width, height), Vec2::new(0.0, height)].map(xf));
+    let bb = Bounds2::from_points([Vec2::new(x0, -depth), Vec2::new(x1, -depth), Vec2::new(x1, height), Vec2::new(x0, height)].map(xf));
     (sh, bb)
 }
 

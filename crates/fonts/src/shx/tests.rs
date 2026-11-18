@@ -507,3 +507,81 @@ fn arabic_an_shx_font_lacks_is_shaped_a_word_at_a_time() {
     let first_x = |s: &crate::Shaped| s.glyphs.iter().flatten().flatten().map(|p| p.x).fold(f64::INFINITY, f64::min);
     assert!(first_x(&mixed) > first_x(&stroke));
 }
+
+/// A one-byte Arabic font laid out as old Arabic SHX fonts are: letters at their places in the
+/// drawing's code page (here Windows-1256: alef 0xC7, lam 0xE1, meem 0xE3), each shape a vertical
+/// stroke `n` units high (n = the code's low five bits) that then moves the pen `n` units left, so
+/// the font itself writes right to left.
+fn arabic_font() -> ShxFont {
+    let mut src = String::from("*0,4,arabic\n6,2,0,0\n*32,4,space\n2,8,(-2,0),0\n");
+    for c in [0xC7u16, 0xE1, 0xE3] {
+        let n = c & 0x1F;
+        src.push_str(&format!("*0{c:X},9,l\n1,8,(0,{n}),2,8,(-{n},-{n}),0\n"));
+    }
+    font(&src)
+}
+
+/// The x of each vertical stroke, in drawing order, and its height.
+fn uprights(sh: &crate::Shaped) -> Vec<(f64, f64)> {
+    sh.strokes.iter().filter_map(|s| Some((s.first()?.x, s.last()?.y - s.first()?.y))).collect()
+}
+
+/// Text in an Arabic SHX font draws as AutoCAD draws it: each character's byte in the drawing's
+/// code page is the shape, in the order stored, with no reordering or joining of its own: the
+/// font's shapes already run right to left from the insertion point.
+#[test]
+fn arabic_shx_draws_each_byte_of_the_drawing_code_page_as_stored() {
+    let t = ShxText::new(Some(std::sync::Arc::new(arabic_font())), None, "", false).in_code_page("ANSI_1256");
+    assert_eq!(t.code_page(), "windows-1256");
+    // "الم": alef (7 high) at the pen's start, then lam (1) 7 units left of it, then meem (3).
+    let sh = super::text::shape(&t, "\u{0627}\u{0644}\u{0645}", 6.0, 1.0, 0.0);
+    assert_eq!(uprights(&sh), vec![(0.0, 7.0), (-7.0, 1.0), (-8.0, 3.0)]);
+    // The pen ends 11 units left: the box runs from there to the insertion point.
+    assert!((sh.start + 11.0).abs() < 1e-9 && (sh.width - 11.0).abs() < 1e-9, "{} {}", sh.start, sh.width);
+    assert!((super::text::width(&t, "\u{0627}\u{0644}\u{0645}", 6.0, 1.0) - 11.0).abs() < 1e-9);
+    // A space between words is the font's own, in the same direction.
+    let two = super::text::shape(&t, "\u{0627} \u{0627}", 6.0, 1.0, 0.0);
+    assert_eq!(uprights(&two), vec![(0.0, 7.0), (-9.0, 7.0)]);
+    // In a drawing whose code page has no Arabic the letters aren't the font's: drawn otherwise.
+    let latin = ShxText::new(Some(std::sync::Arc::new(arabic_font())), None, "", false).in_code_page("ANSI_1252");
+    let other = super::text::shape(&latin, "\u{0627}\u{0644}\u{0645}", 6.0, 1.0, 0.0);
+    assert_ne!(uprights(&other), uprights(&sh));
+}
+
+/// Right- and centre-justified text in a font that writes leftward sits by its box, which ends
+/// at the pen's start: right-justified, it ends at the alignment point.
+#[test]
+fn leftward_text_justifies_by_its_box() {
+    let t = ShxText::new(Some(std::sync::Arc::new(arabic_font())), None, "", false).in_code_page("ANSI_1256");
+    let f = TextFont::Shx(std::sync::Arc::new(t));
+    let at = Vec2::new(100.0, 0.0);
+    let p = |h| TextParams { align_pt: Some(at), h, ..TextParams::new(at, 6.0) };
+    let xs = |sh: &crate::Shaped| sh.strokes.iter().flatten().map(|q| q.x).fold((f64::MAX, f64::MIN), |(a, b), x| (a.min(x), b.max(x)));
+    let (right, bb) = crate::place(&f, "\u{0627}\u{0644}\u{0645}", &p(crate::Align::Right));
+    assert!((xs(&right).1 - 100.0).abs() < 1e-9, "{:?}", xs(&right));
+    assert!((bb.max.x - 100.0).abs() < 1e-9 && (bb.min.x - 89.0).abs() < 1e-9, "{bb:?}");
+    let (centre, _) = crate::place(&f, "\u{0627}\u{0644}\u{0645}", &p(crate::Align::Center));
+    assert!((xs(&centre).1 - 105.5).abs() < 1e-9, "{:?}", xs(&centre));
+    // Left-justified, the pen starts at the insertion point and the text runs left of it.
+    let (left, bb) = crate::place(&f, "\u{0627}\u{0644}\u{0645}", &TextParams::new(at, 6.0));
+    assert!((xs(&left).1 - 100.0).abs() < 1e-9);
+    assert!((bb.min.x - 89.0).abs() < 1e-9 && (bb.max.x - 100.0).abs() < 1e-9, "{bb:?}");
+}
+
+/// An Arabic big font escapes with a single byte (0xCA here, Windows-1256 teh): that byte and the
+/// next, as stored, make one double-byte shape of the big font.
+#[test]
+fn arabic_big_font_pairs_the_drawing_bytes() {
+    let big = font("*BIGFONT 1,1,0CA,0CA\n*0,4,arabic big\n6,0,0,0\n*0CA41,9,pair\n1,8,(0,5),2,8,(-5,-5),0\n");
+    let t = ShxText::new(Some(std::sync::Arc::new(font(TEXT_FONT))), Some(std::sync::Arc::new(big)), "arabnas2.shx", false).in_code_page("ANSI_1256");
+    // "تA" is 0xCA 0x41: one shape, 5 high, not teh and the main font's A.
+    let sh = super::text::shape(&t, "\u{062A}A", 6.0, 1.0, 0.0);
+    assert_eq!(uprights(&sh), vec![(0.0, 5.0)]);
+    assert!((sh.width - 5.0).abs() < 1e-9 && (sh.start + 5.0).abs() < 1e-9);
+    // Its Latin letters stay the main font's.
+    assert_eq!(super::text::shape(&t, "A", 6.0, 1.0, 0.0).width, 6.0);
+    // An East Asian big font reads its codes in the drawing's code page when it is one of theirs.
+    let cjk = font("*BIGFONT 1,1,0A1,0FE\n*0,4,x\n8,0,0,0\n*0FFFF,2,x\n010,0\n");
+    let t = ShxText::new(None, Some(std::sync::Arc::new(cjk)), "custom.shx", false).in_code_page("ANSI_950");
+    assert_eq!(t.big_font_encoding(), "Big5");
+}

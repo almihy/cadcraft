@@ -5,16 +5,22 @@ pub(crate) fn text_style(d: &Drawing, name: &str) -> cadcraft_doc::TextStyle {
     d.text_style(name).cloned().unwrap_or_default()
 }
 
+/// The drawing's code page (`$DWGCODEPAGE`, `ANSI_1256`), or empty when it names none.
+fn code_page(d: &Drawing) -> String {
+    d.header.get("DWGCODEPAGE").and_then(cadcraft_doc::HVal::as_str).map(str::trim).unwrap_or_default().to_string()
+}
+
 /// The font a text style draws with: its font file (TrueType, or an SHX font found by name),
-/// its big font and its vertical flag.
-pub fn style_font(ts: &cadcraft_doc::TextStyle) -> cadcraft_fonts::TextFont {
-    cadcraft_fonts::TextFont::resolve_style(&ts.font, &ts.big_font, ts.vertical)
+/// its big font and its vertical flag, read in the drawing's code page (an SHX font draws a
+/// character by its byte in it, as AutoCAD does).
+pub fn style_font(d: &Drawing, ts: &cadcraft_doc::TextStyle) -> cadcraft_fonts::TextFont {
+    cadcraft_fonts::TextFont::resolve_style_in(&ts.font, &ts.big_font, ts.vertical, &code_page(d))
 }
 
 /// Shape a TEXT / ATTRIB / ATTDEF with its style's font and generation flags.
 pub fn place_text_entity(d: &Drawing, t: &cadcraft_doc::Text, value: &str) -> (cadcraft_fonts::Shaped, Bounds2) {
     let ts = text_style(d, &t.style);
-    let font = style_font(&ts);
+    let font = style_font(d, &ts);
     let (h, v) = align(t.halign, t.valign);
     let p = cadcraft_fonts::TextParams {
         insert: t.insert.xy(),
@@ -42,7 +48,7 @@ pub fn layout_mtext_entity(d: &Drawing, t: &cadcraft_doc::MText) -> cadcraft_fon
         rotation: t.rotation,
         line_spacing: t.line_spacing,
         line_spacing_exact: t.line_spacing_exact,
-        font: style_font(&ts),
+        font: style_font(d, &ts),
         width_factor: ts.width_factor,
         oblique: ts.oblique,
         columns: t.columns.as_ref().map(|c| cadcraft_fonts::MTextColumnSpec {

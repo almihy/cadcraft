@@ -7,7 +7,7 @@ use super::{Builder, Color, Ctx, DimGeometry, DimText, Drawing, Entity, EntityKi
 /// The font settings of a dimension style's text style.
 pub fn dim_text(d: &Drawing, st: &cadcraft_doc::DimStyle) -> DimText {
     let ts = text_style(d, &st.text_style);
-    DimText { font: style_font(&ts), fixed_height: ts.height, width_factor: ts.width_factor, oblique: ts.oblique }
+    DimText { font: style_font(d, &ts), fixed_height: ts.height, width_factor: ts.width_factor, oblique: ts.oblique }
 }
 
 /// Geometry of a dimension in a drawing: its style, overrides and text font.
@@ -85,7 +85,7 @@ pub(crate) fn dimension(
         stroke_with(b, ctx, rgb, w, t, ltscale, l);
     }
     if b.opts.text {
-        let sh = cadcraft_fonts::Shaped { strokes: g.text.clone(), glyphs: g.text_glyphs.clone(), width: 0.0, text: g.text_runs.clone() };
+        let sh = cadcraft_fonts::Shaped { strokes: g.text.clone(), glyphs: g.text_glyphs.clone(), width: 0.0, start: 0.0, text: g.text_runs.clone() };
         b.shaped(ctx, txt_rgb, lw, &sh);
     }
 }
