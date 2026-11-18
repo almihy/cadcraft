@@ -25,3 +25,11 @@ pub fn add_font(name: &str, bytes: &[u8]) -> Result<String, wasm_bindgen::JsValu
         Err(e) => Err(wasm_bindgen::JsValue::from_str(&e)),
     }
 }
+
+/// Whether a font a text style names is here (registered or built in): the page asks before
+/// fetching it from its next source ([`fonts::found`]).
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen::prelude::wasm_bindgen]
+pub fn has_font(name: &str) -> bool {
+    fonts::found(name)
+}

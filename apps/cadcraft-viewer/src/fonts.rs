@@ -39,6 +39,17 @@ pub fn add_font(name: &str, bytes: &[u8]) -> Result<Added, String> {
     Ok(Added::Outline)
 }
 
+/// Whether a font a text style names is here: registered, built in, or the built-in stroke font
+/// (an empty name). The page asks this between its sources of fonts (the firm's, the computer's,
+/// the built-in package) so it fetches each missing font once, from the first that has it.
+pub fn found(name: &str) -> bool {
+    let font = name.trim();
+    font.is_empty()
+        || font.eq_ignore_ascii_case(cadcraft_fonts::BUILTIN_FONT)
+        || cadcraft_fonts::ttf::find(font).is_some()
+        || cadcraft_fonts::shx::find(font).is_some()
+}
+
 /// The font files a drawing's text styles name that are not here (neither registered nor built
 /// in), each once, as the styles spell them: what the page may find among the firm's fonts and
 /// give with [`add_font`] before opening the drawing again.
@@ -46,8 +57,7 @@ pub fn missing(d: &cadcraft_doc::Drawing) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for ts in &d.text_styles {
         let font = ts.font.trim();
-        let builtin = font.is_empty() || font.eq_ignore_ascii_case(cadcraft_fonts::BUILTIN_FONT);
-        if !builtin && cadcraft_fonts::ttf::find(font).is_none() && cadcraft_fonts::shx::find(font).is_none() {
+        if !found(font) {
             out.push(font.to_string());
         }
         let big = ts.big_font.trim();
@@ -98,5 +108,6 @@ mod tests {
         assert_eq!(add_font("C:\\Fonts\\FirmDemo.SHX", &bytes), Ok(Added::Shx));
         assert!(cadcraft_fonts::shx::find("firmdemo").is_some());
         assert!(cadcraft_fonts::shx::find("FIRMDEMO.shx").is_some());
+        assert!(found(r"C:\Fonts\firmdemo.shx") && found("FirmDemo") && found("") && !found("nofirmfont-b.shx"));
     }
 }

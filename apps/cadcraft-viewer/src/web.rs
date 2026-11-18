@@ -47,6 +47,11 @@ struct Mesh {
     layer: usize,
 }
 
+/// The keys vertex data is handed to the GPU under: the canvas makes a layer's buffers again only
+/// when its key changes, so every mesh made, in every drawing opened, gets a key of its own (a
+/// drawing opened again with fonts given since must not keep the first opening's buffers).
+static NEXT_KEY: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
 impl Mesh {
     fn new(layer: usize) -> Mesh {
         Mesh { slot: Arc::new(Mutex::new(None)), key: 0, origin: Vec2::ZERO, ready: false, dirty: false, layer }
@@ -294,7 +299,7 @@ impl State {
                 *s = Some(made);
             }
             mesh.origin = origin;
-            mesh.key += 1;
+            mesh.key = NEXT_KEY.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             mesh.dirty = false;
             mesh.ready = true;
         }
