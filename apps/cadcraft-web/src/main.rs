@@ -157,6 +157,9 @@ mod web {
             {
                 create.instance_descriptor.backends = eframe::wgpu::Backends::GL;
             }
+            // `data-workspace="ribbon"` on the canvas: the ribbon in place of the Tool Sets, for a
+            // host whose people know AutoCAD on Windows.
+            let ribbon = canvas.get_attribute("data-workspace").is_some_and(|w| w == "ribbon");
             let result = eframe::WebRunner::new()
                 .start(
                     canvas,
@@ -178,6 +181,9 @@ mod web {
                             && let Err(error) = crate::panel_layout::restore(&mut app.ui, &layout)
                         {
                             log::warn!("panel layout was not restored: {error}");
+                        }
+                        if ribbon && !app.ui.ribbon {
+                            let _ = app.run("ui.toggle.ribbon", serde_json::json!({"on": true}));
                         }
                         // `?cpu`: no render state for the app, so the canvas draws with egui shapes.
                         if !crate::wants_cpu(&query())

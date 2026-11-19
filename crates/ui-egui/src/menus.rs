@@ -96,6 +96,7 @@ pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("ui.animations.on", "On", &["View", "Accessibility", "Animation Effects", "On"], None),
     ("ui.animations.off", "Off", &["View", "Accessibility", "Animation Effects", "Off"], None),
     ("ui.animations", "Animation Effects", &[], None),
+    ("ui.toggle.ribbon", "Ribbon", &["Window", "Ribbon"], None),
     ("ui.toggle.toolbar", "Tool Bar", &["Window", "Tool Bar"], None),
     ("ui.toggle.filetabs", "File Tab", &["Window", "File Tab"], None),
     ("ui.toggle.statusbar", "Status Bar", &["Window", "Status Bar"], None),
@@ -281,6 +282,16 @@ fn run_ui_toggle_command(app: &mut CadApp, id: &str, params: &Value) -> Option<R
         }
         "ui.toggle.palettes" => {
             toggle(&mut app.ui.show_palettes, params);
+            Ok(Value::Null)
+        }
+        "ui.toggle.ribbon" => {
+            toggle(&mut app.ui.ribbon, params);
+            // The ribbon takes the Tool Sets' place; turning it off brings them back.
+            let tool_sets = !app.ui.ribbon;
+            if app.ui.show_toolsets != tool_sets {
+                let _ = run_ui_toggle_command(app, "ui.toggle.toolsets", &json!({"on": tool_sets}));
+                app.ui.show_toolsets = tool_sets;
+            }
             Ok(Value::Null)
         }
         "ui.toggle.toolbar" => {

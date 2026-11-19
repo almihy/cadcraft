@@ -61,6 +61,7 @@ pub mod modal;
 pub mod opening;
 pub mod options;
 pub mod palettes;
+pub mod ribbon;
 pub mod parametric;
 pub mod plotstyles;
 pub mod quick;
@@ -112,6 +113,10 @@ pub struct UiState {
     pub system_cursor: bool,
     /// "Drafting" or "Modeling".
     pub toolset_tab: String,
+    /// The ribbon across the top (AutoCAD's face on Windows) in place of the Tool Sets
+    /// (`ui.toggle.ribbon`), and the tab it shows.
+    pub ribbon: bool,
+    pub ribbon_tab: String,
     pub collapsed_groups: Vec<String>,
     /// Tools the user took out of the Tool Sets palette (command ids); each category's gear
     /// menu puts them back.
@@ -205,6 +210,8 @@ impl Default for UiState {
             show_layer_list: false,
             system_cursor: false,
             toolset_tab: "Drafting".into(),
+            ribbon: false,
+            ribbon_tab: "Home".into(),
             collapsed_groups: Vec::new(),
             hidden_tools: Vec::new(),
             properties_all: true,
@@ -1096,11 +1103,14 @@ impl CadApp {
         if self.ui.show_status_bar {
             chrome::status_bar(self, ui);
         }
+        let has_doc = !self.session.docs.is_empty() && !self.ui.start_tab;
+        if self.ui.ribbon && has_doc {
+            ribbon::show(self, ui);
+        }
         if self.ui.show_file_tabs {
             chrome::file_tabs(self, ui);
         }
-        let has_doc = !self.session.docs.is_empty() && !self.ui.start_tab;
-        if has_doc && !self.ui.show_toolsets {
+        if has_doc && !self.ui.show_toolsets && !self.ui.ribbon {
             palettes::toolsets_strip(self, ui);
         }
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(t.canvas)).show(ui, |ui| {
