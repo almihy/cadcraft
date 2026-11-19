@@ -1,0 +1,13 @@
+autocad/Database Connectivity/Floor Plan Sample.dwg
+autocad/en-us/Dynamic Blocks/Architectural - Metric.dwg
+autocad/Mechanical Sample/Data Extraction and Multileaders Sample.dwg
+autocad/Mechanical Sample/Mechanical - Xref.dwg
+autocad/Sheet Sets/Architectural/A-03.dwg
+autocad/Sheet Sets/Architectural/Res/Wall Base.dwg
+autocad/Sheet Sets/Civil/Master Site Plan.dwg
+autocad/Sheet Sets/Civil/Site Grading Plan.dwg
+autocad/Sheet Sets/Manufacturing/VW252-02-0200.dwg
+autocad/VBA/Tower.dwg
+firms/plan.dwg
+firms/school.dwg
+firms/HDM-Masterplan-TEST.dwg

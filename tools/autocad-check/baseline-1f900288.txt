@@ -1,0 +1,61 @@
+138 files; AutoCAD refused 8; counts differ 10; more audit errors than the original 36; clean 89
+
+REFUSED
+  autocad/Database Connectivity/Floor Plan Sample.dwg
+  autocad/Mechanical Sample/Mechanical - Data Links.dwg
+  versions/2000/autocad__Database Connectivity__Floor Plan Sample.dwg
+  versions/2000/autocad__en-us__Dynamic Blocks__Architectural - Metric.dwg
+  versions/2000/autocad__VBA__Tower.dwg
+  versions/2000/firms__school.dwg
+  versions/2004/autocad__Database Connectivity__Floor Plan Sample.dwg
+  versions/2013/autocad__Database Connectivity__Floor Plan Sample.dwg
+
+DIFFER
+  autocad/Mechanical Sample/Mechanical - Text and Tables.dwg | paper 6->4; anonblocks 2->0
+  autocad/Sheet Sets/Architectural/A-03.dwg | paper 21->19; anonblocks 27->25
+  autocad/Sheet Sets/Civil/Drainage Summary.dwg | paper 15->12; anonblocks 7->4
+  versions/2000/autocad__Mechanical Sample__Data Extraction and Multileaders Sample.dwg | paper 107->123
+  versions/2000/autocad__Sheet Sets__Architectural__A-03.dwg | paper 21->19; anonblocks 27->25
+  versions/2000/firms__HDM-Masterplan-TEST.dwg | model 11344->11338; ACAD_PROXY_ENTITY 6->0
+  versions/2004/autocad__Mechanical Sample__Data Extraction and Multileaders Sample.dwg | paper 107->123
+  versions/2004/autocad__Sheet Sets__Architectural__A-03.dwg | paper 21->19; anonblocks 27->25
+  versions/2004/firms__HDM-Masterplan-TEST.dwg | model 11344->11338; ACAD_PROXY_ENTITY 6->0
+  versions/2013/autocad__Mechanical Sample__Data Extraction and Multileaders Sample.dwg | paper 107->106; anonblocks 100->99
+
+AUDIT
+  autocad/Sheet Sets/Architectural/Res/Building Section.dwg 0 -> 2
+  autocad/Sheet Sets/Civil/Erosion Control Plan.dwg 0 -> 28
+  autocad/Sheet Sets/Civil/Existing Conditions Plan.dwg 0 -> 128
+  autocad/Sheet Sets/Civil/PB-BASE.dwg 0 -> 620
+  autocad/Sheet Sets/Civil/PB-EX41.dwg 0 -> 162
+  autocad/Sheet Sets/Manufacturing/VW252-02-0142.dwg 0 -> 573
+  autocad/Sheet Sets/Manufacturing/VW252-02-0143.dwg 0 -> 849
+  autocad/Sheet Sets/Manufacturing/VW252-02-0200.dwg 0 -> 1177
+  autocad/Sheet Sets/Manufacturing/VW252-02-0203-1.dwg 0 -> 7903
+  autocad/Sheet Sets/Manufacturing/VW252-02-0300.dwg 0 -> 14495
+  autocad/Sheet Sets/Manufacturing/VW252-02-0500-N.dwg 0 -> 799
+  autocad/Sheet Sets/Manufacturing/VW252-02-0500.dwg 0 -> 6637
+  autocad/Sheet Sets/Manufacturing/VW252-02-0600.dwg 0 -> 523
+  autocad/Sheet Sets/Manufacturing/VW252-02-0900.dwg 0 -> 8999
+  autocad/Sheet Sets/Manufacturing/VW252-02-0901.dwg 0 -> 3097
+  autocad/Sheet Sets/Manufacturing/VW252-02-1000.dwg 0 -> 257
+  autocad/Sheet Sets/Manufacturing/VW252-02-1600.dwg 0 -> 581
+  autocad/Sheet Sets/Manufacturing/VW252-03-1200.dwg 0 -> 7863
+  autocad/Sheet Sets/Manufacturing/VW252-03-1300.dwg 0 -> 2077
+  firms/HDM-Masterplan-TEST.dwg 0 -> 238
+  firms/school.dwg 2 -> 324
+  versions/2000/autocad__Mechanical Sample__Data Extraction and Multileaders Sample.dwg 0 -> 33
+  versions/2000/autocad__Mechanical Sample__Mechanical - Xref.dwg 0 -> 1
+  versions/2000/autocad__Sheet Sets__Architectural__A-03.dwg 0 -> 1
+  versions/2000/autocad__Sheet Sets__Architectural__Res__Wall Base.dwg 0 -> 1
+  versions/2000/autocad__Sheet Sets__Civil__Master Site Plan.dwg 0 -> 1
+  versions/2000/autocad__Sheet Sets__Civil__Site Grading Plan.dwg 0 -> 1
+  versions/2000/autocad__Sheet Sets__Manufacturing__VW252-02-0200.dwg 0 -> 1178
+  versions/2000/firms__HDM-Masterplan-TEST.dwg 0 -> 239
+  versions/2004/autocad__Mechanical Sample__Data Extraction and Multileaders Sample.dwg 0 -> 32
+  versions/2004/autocad__Sheet Sets__Manufacturing__VW252-02-0200.dwg 0 -> 1177
+  versions/2004/firms__HDM-Masterplan-TEST.dwg 0 -> 238
+  versions/2004/firms__school.dwg 2 -> 324
+  versions/2013/autocad__Sheet Sets__Manufacturing__VW252-02-0200.dwg 0 -> 1177
+  versions/2013/firms__HDM-Masterplan-TEST.dwg 0 -> 238
+  versions/2013/firms__school.dwg 2 -> 324
