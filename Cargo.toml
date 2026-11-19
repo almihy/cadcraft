@@ -126,6 +126,9 @@ codegen-units = 1
 # PDF backends for craft-pdf: pinned to the same reviewed craft-libs revision as craft-pdf itself
 # (Cargo ignores dependency-local patches).
 [patch.crates-io]
+# acadrust at its main branch: the fixes AutoCAD's audit needs (a vertex with its polyline's line type, proxies' classes at
+# every version) are not in a release yet (tools/autocad-check).
+acadrust = { git = "https://github.com/hakanaktt/acadrust", rev = "b4c316e0f425816474140d8a4f4c2661884520af" }
 krilla = { version = "=0.8.2", git = "https://github.com/storytold/craft-libs", rev = "92d392cff132eaf53e13afff77f38b5c11b73aa0" }
 hayro-syntax = { git = "https://github.com/storytold/craft-libs", rev = "92d392cff132eaf53e13afff77f38b5c11b73aa0" }
 hayro-jbig2 = { git = "https://github.com/storytold/craft-libs", rev = "92d392cff132eaf53e13afff77f38b5c11b73aa0" }
