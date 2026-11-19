@@ -6,11 +6,12 @@
 set -u
 cd /x/corpus
 CLI="${CLI:-/x/targets/cadcraft-corpus-cli/release/cadcraft-cli.exe}"
-find in -name "*.rt.dwg*" -delete
+# Edited saves (check-edit.sh) are not originals: they are put aside while this runs.
+find in \( -name "*.rt.dwg*" -o -name "*.add.dwg*" -o -name "*.touch.dwg*" \) -delete
 rm -rf report
 "$CLI" roundtrip X:/corpus/in --out X:/corpus/report --keep-saved --same-format > roundtrip.out 2> roundtrip.err
 echo "roundtrip exit $?: $(grep -c 'opened' roundtrip.out) opened, $(grep -c 'failed' roundtrip.out) failed"
-find in -iname "*.dwg" | while IFS= read -r f; do
+find in -iname "*.dwg" ! -iname "*.rt.dwg" | while IFS= read -r f; do
   rel="${f#in/}"; s="report/saved/${rel//\//_}.roundtrip.dwg"
   [ -f "$s" ] && cp "$s" "${f%.[dD][wW][gG]}.rt.dwg"
 done

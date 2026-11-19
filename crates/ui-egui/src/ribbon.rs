@@ -86,9 +86,9 @@ const ROWS: usize = 2;
 const ARROW_W: f32 = 12.0;
 const LARGE_ICON: f32 = 24.0;
 const LARGE_MIN_W: f32 = 48.0;
-const CONTROL_W: f32 = 148.0;
+const CONTROL_W: f32 = 132.0;
 const FOLDED_W: f32 = 62.0;
-const PAD: f32 = 5.0;
+const PAD: f32 = 4.0;
 const FONT: f32 = 11.5;
 
 fn font() -> egui::FontId {
@@ -182,10 +182,8 @@ fn cell_w(ui: &egui::Ui, cell: &Cell) -> f32 {
         Cell::Icon(_) => SMALL,
         Cell::Text((_, _, label)) => SMALL + text_w(ui, &crate::i18n::t(label)) + 6.0,
         Cell::Split(_) => SMALL + ARROW_W,
-        Cell::SplitText(tools) => {
-            let widest = tools.iter().map(|tool| text_w(ui, &crate::i18n::t(tool.2))).fold(0.0, f32::max);
-            SMALL + widest.min(72.0) + 6.0 + ARROW_W
-        }
+        // As wide as the variant it shows: the panel is no wider than what is on it.
+        Cell::SplitText(tools) => SMALL + text_w(ui, &crate::i18n::t(picked(ui, tools).2)) + 6.0 + ARROW_W,
         Cell::Row(cells) => cells.iter().map(|c| cell_w(ui, c)).sum(),
         Cell::Control(_) => CONTROL_W,
     }

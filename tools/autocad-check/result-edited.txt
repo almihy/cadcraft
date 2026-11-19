@@ -1,0 +1,82 @@
+add: 153 files; not saved 0; AutoCAD refused 9; counts differ 20; AUDIT worse 2; clean 123
+ REFUSED
+    autocad/Database Connectivity/Floor Plan Sample.dwg 
+    versions/2000/autocad__Database Connectivity__Floor Plan Sample.dwg 
+    versions/2000/autocad__Mechanical Sample__Data Extraction and Multileaders Sample.dwg 
+    versions/2000/autocad__Sheet Sets__Architectural__A-03.dwg 
+    versions/2000/autocad__Sheet Sets__Civil__Master Site Plan.dwg 
+    versions/2000/autocad__Sheet Sets__Civil__Site Grading Plan.dwg 
+    versions/2000/autocad__Sheet Sets__Manufacturing__VW252-02-0200.dwg 
+    versions/2004/autocad__Database Connectivity__Floor Plan Sample.dwg 
+    versions/2013/autocad__Database Connectivity__Floor Plan Sample.dwg 
+ DIFFER
+    autocad/en-us/Dynamic Blocks/Architectural - Imperial.dwg | anonblocks 2->27
+    autocad/en-us/Dynamic Blocks/Architectural - Metric.dwg | anonblocks 2->27
+    autocad/en-us/Dynamic Blocks/Civil - Imperial.dwg | anonblocks 5->33
+    autocad/en-us/Dynamic Blocks/Civil - Metric.dwg | anonblocks 5->33
+    autocad/en-us/Dynamic Blocks/Mechanical - Imperial.dwg | anonblocks 3->59
+    autocad/en-us/Dynamic Blocks/Mechanical - Metric.dwg | anonblocks 5->17
+    autocad/en-us/Dynamic Blocks/Structural - Imperial.dwg | anonblocks 3->5
+    autocad/en-us/Dynamic Blocks/Structural - Metric.dwg | anonblocks 3->7
+    autocad/Sheet Sets/Architectural/A-02.dwg | blocks 5->6
+    autocad/Sheet Sets/Architectural/A-05.dwg | blocks 19->21
+    autocad/Sheet Sets/Architectural/S-03.dwg | blocks 37->39
+    autocad/Sheet Sets/Architectural/S-04.dwg | blocks 67->68
+    autocad/Sheet Sets/Architectural/Res/STAIR2.dwg | blocks 5->6
+    versions/2000/autocad__en-us__Dynamic Blocks__Architectural - Metric.dwg | anonblocks 2->27
+    versions/2004/autocad__en-us__Dynamic Blocks__Architectural - Metric.dwg | anonblocks 2->27
+    versions/2004/autocad__Mechanical Sample__Data Extraction and Multileaders Sample.dwg | items 207+3->226
+    versions/2007/autocad__en-us__Dynamic Blocks__Architectural - Metric.dwg | anonblocks 2->27
+    versions/2010/autocad__en-us__Dynamic Blocks__Architectural - Metric.dwg | anonblocks 2->27
+    versions/2013/autocad__en-us__Dynamic Blocks__Architectural - Metric.dwg | anonblocks 2->27
+    versions/2018/autocad__en-us__Dynamic Blocks__Architectural - Metric.dwg | anonblocks 2->27
+ AUDIT
+    autocad/Sheet Sets/Architectural/Res/Building Section.dwg 0 -> 2
+    versions/2004/autocad__Mechanical Sample__Data Extraction and Multileaders Sample.dwg 0 -> 32
+touch: 153 files; not saved 10; AutoCAD refused 9; counts differ 21; AUDIT worse 2; clean 112
+ NOT SAVED
+    autocad/ActiveX/SheetSetVBA/Sheet1.dwg 
+    autocad/ActiveX/SheetSetVBA/Sheet2.dwg 
+    autocad/ActiveX/SheetSetVBA/Sheet3.dwg 
+    autocad/en-us/DesignCenter/AutoCAD Textstyles and Linetypes.dwg 
+    autocad/Mechanical Sample/Mechanical - Data Links.dwg 
+    autocad/Mechanical Sample/Mechanical - Text and Tables.dwg 
+    autocad/Sheet Sets/Architectural/T-01.dwg 
+    autocad/Sheet Sets/Civil/Drainage Summary.dwg 
+    autocad/Sheet Sets/Civil/Title Sheet.dwg 
+    autocad/Sheet Sets/Manufacturing/Cover Sheet.dwg 
+ REFUSED
+    autocad/Database Connectivity/Floor Plan Sample.dwg 
+    versions/2000/autocad__Database Connectivity__Floor Plan Sample.dwg 
+    versions/2000/autocad__Mechanical Sample__Data Extraction and Multileaders Sample.dwg 
+    versions/2000/autocad__Sheet Sets__Architectural__A-03.dwg 
+    versions/2000/autocad__Sheet Sets__Civil__Master Site Plan.dwg 
+    versions/2000/autocad__Sheet Sets__Civil__Site Grading Plan.dwg 
+    versions/2000/autocad__Sheet Sets__Manufacturing__VW252-02-0200.dwg 
+    versions/2004/autocad__Database Connectivity__Floor Plan Sample.dwg 
+    versions/2013/autocad__Database Connectivity__Floor Plan Sample.dwg 
+ DIFFER
+    autocad/en-us/Dynamic Blocks/Architectural - Imperial.dwg | anonblocks 2->27
+    autocad/en-us/Dynamic Blocks/Architectural - Metric.dwg | anonblocks 2->27
+    autocad/en-us/Dynamic Blocks/Civil - Imperial.dwg | anonblocks 5->33
+    autocad/en-us/Dynamic Blocks/Civil - Metric.dwg | anonblocks 5->33
+    autocad/en-us/Dynamic Blocks/Mechanical - Imperial.dwg | anonblocks 3->59
+    autocad/en-us/Dynamic Blocks/Mechanical - Metric.dwg | anonblocks 5->17
+    autocad/en-us/Dynamic Blocks/Structural - Imperial.dwg | anonblocks 3->5
+    autocad/en-us/Dynamic Blocks/Structural - Metric.dwg | anonblocks 3->7
+    autocad/Sheet Sets/Architectural/A-02.dwg | blocks 5->6
+    autocad/Sheet Sets/Architectural/A-05.dwg | blocks 19->21
+    autocad/Sheet Sets/Architectural/S-03.dwg | blocks 37->39
+    autocad/Sheet Sets/Architectural/S-04.dwg | blocks 67->68
+    autocad/Sheet Sets/Architectural/Res/STAIR2.dwg | blocks 5->6
+    autocad/Sheet Sets/Manufacturing/VW252-02-0500-N.dwg | LWPOLYLINE 0->1; POLYLINE 11->10
+    versions/2000/autocad__en-us__Dynamic Blocks__Architectural - Metric.dwg | anonblocks 2->27
+    versions/2004/autocad__en-us__Dynamic Blocks__Architectural - Metric.dwg | anonblocks 2->27
+    versions/2004/autocad__Mechanical Sample__Data Extraction and Multileaders Sample.dwg | paper 107->123
+    versions/2007/autocad__en-us__Dynamic Blocks__Architectural - Metric.dwg | anonblocks 2->27
+    versions/2010/autocad__en-us__Dynamic Blocks__Architectural - Metric.dwg | anonblocks 2->27
+    versions/2013/autocad__en-us__Dynamic Blocks__Architectural - Metric.dwg | anonblocks 2->27
+    versions/2018/autocad__en-us__Dynamic Blocks__Architectural - Metric.dwg | anonblocks 2->27
+ AUDIT
+    autocad/Sheet Sets/Architectural/Res/Building Section.dwg 0 -> 2
+    versions/2004/autocad__Mechanical Sample__Data Extraction and Multileaders Sample.dwg 0 -> 32

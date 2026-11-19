@@ -20,7 +20,7 @@ function walk(dir, out = []) {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, e.name);
     if (e.isDirectory()) walk(p, out);
-    else if (/\.dwg$/i.test(e.name)) out.push(p);
+    else if (/\.dwg$/i.test(e.name) && (!ONLY || ONLY.test(e.name))) out.push(p);
   }
   return out;
 }

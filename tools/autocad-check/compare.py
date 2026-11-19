@@ -17,7 +17,7 @@ def audit(p):
 rows=[]
 for dp,_,fs in os.walk(root+'/in'):
     for f in fs:
-        if not f.lower().endswith('.dwg') or f.lower().endswith('.rt.dwg'): continue
+        if not f.lower().endswith('.dwg') or f.lower().endswith(('.rt.dwg', '.add.dwg', '.touch.dwg')): continue
         src=os.path.join(dp,f); rel=os.path.relpath(src,root+'/in').replace(os.sep,'/')
         saved=src[:-4]+'.rt.dwg'
         a=read(src+'.acad.txt'); b=read(saved+'.acad.txt')

@@ -31,7 +31,7 @@ const HATCHES: &[Tool] = &[(Icon::Hatch, "hatch", "Hatch"), (Icon::Gradient, "gr
 const TRIMS: &[Tool] = &[(Icon::Trim, "trim", "Trim"), (Icon::Extend, "extend", "Extend")];
 const FILLETS: &[Tool] = &[(Icon::Fillet, "fillet", "Fillet"), (Icon::Chamfer, "chamfer", "Chamfer"), (Icon::Spline, "blend", "Blend Curves")];
 const ARRAYS: &[Tool] =
-    &[(Icon::ArrayRect, "arrayrect", "Rectangular Array"), (Icon::ArrayRect, "arraypath", "Path Array"), (Icon::ArrayPolar, "arraypolar", "Polar Array")];
+    &[(Icon::ArrayRect, "arrayrect", "Array"), (Icon::ArrayRect, "arraypath", "Path Array"), (Icon::ArrayPolar, "arraypolar", "Polar Array")];
 const TEXTS: &[Tool] = &[(Icon::MText, "mtext", "Multiline Text"), (Icon::Text, "text", "Single Line")];
 const DIMENSIONS: &[Tool] = &[
     (Icon::DimLinear, "dimlinear", "Linear"),
