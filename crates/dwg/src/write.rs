@@ -95,7 +95,8 @@ pub fn into_document(d: &Drawing, doc: &mut CadDocument, ext: &dyn crate::Extens
             taken: record_handles(doc),
         };
         // Block definitions (an xref's objects come from its file), model space, layouts.
-        for b in d.blocks.values().filter(|b| b.xref_path.is_none()) {
+        // A block that came with a loaded xref (`xref|name`) is the referenced drawing's too.
+        for b in d.blocks.values().filter(|b| b.xref_path.is_none() && !cadcraft_doc::foreign::xref_dependent(&b.name)) {
             if let Some(br) = blocks.get(&up(&b.name)) {
                 container(doc, *br, &b.entities, (&names, d.foreign.dwg_source.as_ref()), &mut cx, &mut unwritten);
             }
@@ -527,13 +528,14 @@ fn sort_table(doc: &mut CadDocument, br: AHandle, order: &[AHandle]) {
 
 /// Layers, linetypes, text styles and dimension styles: records matched by name, written when
 /// they differ, added when new and removed when the drawing no longer has them.
+    // A layer, style or linetype a loaded xref brought (`xref|name`) is added to no table: see `blocks`.
 fn tables(d: &Drawing, doc: &mut CadDocument, names: &Names) {
     for l in &d.layers {
         if let Some(x) = doc.layers.iter_mut().find(|x| x.name.eq_ignore_ascii_case(&l.name)) {
                 if tb::layer(x) != *l {
                     tb::put_layer(x, l);
                 }
-        } else {
+        } else if !cadcraft_doc::foreign::xref_dependent(&l.name) {
                 let mut x = at::Layer::new(l.name.clone());
                 x.handle = doc.allocate_handle();
                 tb::put_layer(&mut x, l);
@@ -555,7 +557,7 @@ fn tables(d: &Drawing, doc: &mut CadDocument, names: &Names) {
                 if read.get(&up(&s.name)) != Some(s) {
                     tb::put_text_style(x, s);
                 }
-        } else {
+        } else if !cadcraft_doc::foreign::xref_dependent(&s.name) {
                 let mut x = at::TextStyle::new(s.name.clone());
                 x.handle = doc.allocate_handle();
                 tb::put_text_style(&mut x, s);
@@ -584,7 +586,7 @@ fn tables(d: &Drawing, doc: &mut CadDocument, names: &Names) {
                 if tb::linetype(x, names, &shape_files) != *l {
                     tb::put_linetype(x, l, &style_of);
                 }
-        } else {
+        } else if !cadcraft_doc::foreign::xref_dependent(&l.name) {
                 let mut x = at::LineType::new(l.name.clone());
                 x.handle = doc.allocate_handle();
                 tb::put_linetype(&mut x, l, &style_of);
@@ -615,7 +617,7 @@ fn tables(d: &Drawing, doc: &mut CadDocument, names: &Names) {
                 if tb::dim_style(x, names) != *s {
                     tb::put_dim_style(x, s, &lookups);
                 }
-        } else {
+        } else if !cadcraft_doc::foreign::xref_dependent(&s.name) {
                 let mut x = at::DimStyle::new(s.name.clone());
                 x.handle = doc.allocate_handle();
                 tb::put_dim_style(&mut x, s, &lookups);
@@ -648,7 +650,7 @@ fn blocks(d: &Drawing, doc: &mut CadDocument) {
     let gone: Vec<(String, Vec<AHandle>)> = doc
         .block_records
         .iter()
-        .filter(|b| !is_space(b) && !b.name.is_empty() && !keep.contains(&up(&b.name)))
+        .filter(|b| !is_space(b) && !b.name.is_empty() && !keep.contains(&up(&b.name)) && !cadcraft_doc::foreign::xref_dependent(&b.name))
         .map(|b| (b.name.clone(), b.entity_handles.clone()))
         .collect();
     for (name, hs) in gone {
@@ -668,6 +670,12 @@ fn blocks(d: &Drawing, doc: &mut CadDocument) {
             if moved && let Some(EntityType::Block(m)) = doc.get_entity_mut(marker) {
                 m.base_point = base;
             }
+            continue;
+        }
+        // What a loaded xref brought (`xref|name`) is not the host's to write: AutoCAD makes these
+        // records again from the referenced drawing when it opens the host, and as the host's own
+        // they fail its audit ("Non XREF-dependent record contains vertical bar").
+        if cadcraft_doc::foreign::xref_dependent(&b.name) {
             continue;
         }
         let mut record = BlockRecord::new(&b.name);
