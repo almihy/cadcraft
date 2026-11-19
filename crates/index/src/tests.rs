@@ -85,6 +85,9 @@ fn the_summary_says_what_is_on_each_layer_in_millimetres() {
     assert_eq!(s["extents"], json!([[0.0, 0.0], [10000.0, 8000.0]]));
     assert_eq!(s["outer"][1][0], 5_001_000.0);
     assert!(s.get("offset").is_none());
+    // The usual text height, in millimetres: what a check of the drawing's unit goes by.
+    assert_eq!(s["text"]["items"], 1);
+    assert_eq!(s["text"]["height"], 200.0, "0.2 m");
 }
 
 #[test]

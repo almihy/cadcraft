@@ -23,16 +23,24 @@ pub const NOTES_LISTED: usize = 20;
 /// items first, up to LAYERS_LISTED; `layers_total` when there are more), blocks [{name, placed,
 /// size: [w, h]}] (most placed first, up to BLOCKS_LISTED), blocks_total (blocks placed in model
 /// space), blocks_defined, text_styles [{name, font}] (up to STYLES_LISTED; `text_styles_total`
-/// when there are more), and left_out (what reading the file could not take, and why), when
-/// anything was: its `notes` up to NOTES_LISTED (`notes_total` when there are more).
+/// when there are more), text {items, height} (model space's text and multi-line text: how many,
+/// and the height in the middle of them, mm; left out when there is none), and left_out (what
+/// reading the file could not take, and why), when anything was: its `notes` up to NOTES_LISTED
+/// (`notes_total` when there are more).
 pub(crate) fn summary(o: &Opened) -> Value {
     let d = &o.drawing;
     let mut kinds: BTreeMap<&str, usize> = BTreeMap::new();
     let mut per_layer: HashMap<&str, (usize, BTreeMap<&str, usize>)> = HashMap::new();
     // Placements by block name: how many, and the box of the first (its own turned frame's size).
     let mut placed: HashMap<&str, (usize, [f64; 2])> = HashMap::new();
+    let mut text_heights: Vec<f64> = Vec::new();
     for (e, b) in o.model_items() {
         let k = kind_of(&e.kind);
+        match &e.kind {
+            EntityKind::Text(t) if t.height.is_finite() && t.height > 0.0 => text_heights.push(t.height),
+            EntityKind::MText(t) if t.height.is_finite() && t.height > 0.0 => text_heights.push(t.height),
+            _ => {}
+        }
         *kinds.entry(k).or_default() += 1;
         let (n, ks) = per_layer.entry(e.common.layer.as_str()).or_default();
         *n += 1;
@@ -75,6 +83,11 @@ pub(crate) fn summary(o: &Opened) -> Value {
         "blocks_defined": d.blocks.values().filter(|b| !b.anonymous && !b.name.starts_with('*')).count(),
         "text_styles": styles,
     });
+    if !text_heights.is_empty() {
+        let (items, mid) = (text_heights.len(), text_heights.len() / 2);
+        let median = *text_heights.select_nth_unstable_by(mid, f64::total_cmp).1;
+        out["text"] = json!({"items": items, "height": o.len(median)});
+    }
     if layers_total > LAYERS_LISTED {
         out["layers_total"] = json!(layers_total);
     }
