@@ -1,0 +1,34 @@
+153 files; AutoCAD refused 9; counts differ 16; more audit errors than the original 2; clean 127
+
+REFUSED
+  autocad/Database Connectivity/Floor Plan Sample.dwg
+  versions/2000/autocad__Database Connectivity__Floor Plan Sample.dwg
+  versions/2000/autocad__Mechanical Sample__Data Extraction and Multileaders Sample.dwg
+  versions/2000/autocad__Sheet Sets__Architectural__A-03.dwg
+  versions/2000/autocad__Sheet Sets__Civil__Master Site Plan.dwg
+  versions/2000/autocad__Sheet Sets__Civil__Site Grading Plan.dwg
+  versions/2000/autocad__Sheet Sets__Manufacturing__VW252-02-0200.dwg
+  versions/2004/autocad__Database Connectivity__Floor Plan Sample.dwg
+  versions/2013/autocad__Database Connectivity__Floor Plan Sample.dwg
+
+DIFFER
+  autocad/en-us/Dynamic Blocks/Architectural - Imperial.dwg | anonblocks 2->27
+  autocad/en-us/Dynamic Blocks/Architectural - Metric.dwg | anonblocks 2->27
+  autocad/en-us/Dynamic Blocks/Civil - Imperial.dwg | anonblocks 5->33
+  autocad/en-us/Dynamic Blocks/Civil - Metric.dwg | anonblocks 5->33
+  autocad/en-us/Dynamic Blocks/Mechanical - Imperial.dwg | anonblocks 3->59
+  autocad/en-us/Dynamic Blocks/Mechanical - Metric.dwg | anonblocks 5->17
+  autocad/en-us/Dynamic Blocks/Structural - Imperial.dwg | anonblocks 3->5
+  autocad/en-us/Dynamic Blocks/Structural - Metric.dwg | anonblocks 3->7
+  autocad/Mechanical Sample/Mechanical - Text and Tables.dwg | extmax [815.864, 594.038]->[833.39, 594.038]
+  versions/2000/autocad__en-us__Dynamic Blocks__Architectural - Metric.dwg | anonblocks 2->27
+  versions/2004/autocad__en-us__Dynamic Blocks__Architectural - Metric.dwg | anonblocks 2->27
+  versions/2004/autocad__Mechanical Sample__Data Extraction and Multileaders Sample.dwg | paper 107->123
+  versions/2007/autocad__en-us__Dynamic Blocks__Architectural - Metric.dwg | anonblocks 2->27
+  versions/2010/autocad__en-us__Dynamic Blocks__Architectural - Metric.dwg | anonblocks 2->27
+  versions/2013/autocad__en-us__Dynamic Blocks__Architectural - Metric.dwg | anonblocks 2->27
+  versions/2018/autocad__en-us__Dynamic Blocks__Architectural - Metric.dwg | anonblocks 2->27
+
+AUDIT
+  autocad/Sheet Sets/Architectural/Res/Building Section.dwg 0 -> 2
+  versions/2004/autocad__Mechanical Sample__Data Extraction and Multileaders Sample.dwg 0 -> 32

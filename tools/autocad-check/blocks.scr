@@ -1,0 +1,9 @@
+(defun blk ( / t1 f e n k)
+  (setq f (open (strcat (getvar "DWGPREFIX") (getvar "DWGNAME") ".blocks.txt") "w") t1 (tblnext "BLOCK" T))
+  (while t1
+    (setq n 0 e (cdr (assoc -2 t1)))
+    (while e (setq n (1+ n) e (entnext e)))
+    (write-line (strcat (cdr (assoc 2 t1)) " flags=" (itoa (cdr (assoc 70 t1))) " items=" (itoa n)) f)
+    (setq t1 (tblnext "BLOCK")))
+  (close f) (princ))
+(blk)
