@@ -79,7 +79,9 @@ if (mode === "count") {
   const [inDir, outDir, list] = [resolve(process.argv[3]), resolve(process.argv[4]), process.argv[5]];
   const names = readFileSync(list, "utf8").split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
   const todo = [];
-  for (const n of names) for (const v of ["2000", "2004", "2013"]) todo.push([n, v]);
+  const vi = process.argv.indexOf("--versions");
+  const versions = vi > 0 ? process.argv[vi + 1].split(",") : ["2000", "2004", "2013"];
+  for (const n of names) for (const v of versions) todo.push([n, v]);
   await pool(todo, arg("jobs", 4), async ([n, v]) => {
     const src = join(inDir, n);
     const dst = join(outDir, v, n.replace(/[\\/]/g, "__"));

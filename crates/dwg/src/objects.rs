@@ -236,9 +236,10 @@ fn read_limits(l: &acadrust::objects::Layout) -> Option<(Vec2, Vec2)> {
 pub fn drop_unwritable(doc: &mut CadDocument) -> Unwritten {
     use acadrust::entities::ExtendedEntityData as X;
     let version = doc.version;
-    // Before 2013 acadrust writes no class for a proxy, whose class number would then name
-    // another class: proxies are left out.
-    let legacy = version < acadrust::DxfVersion::AC1027;
+    // Proxies are written at every version: acadrust writes each one's class with the file's
+    // classes (AutoCAD's audit of the 2000 to 2010 copies of a drawing with proxies finds
+    // nothing, `tools/autocad-check`).
+    let legacy = false;
     let mut dropped = Unwritten::new();
     let mut count = |name: &str| *dropped.entry(name.trim().to_ascii_uppercase()).or_insert(0) += 1;
     let entities: Vec<AHandle> = doc

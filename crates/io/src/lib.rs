@@ -56,6 +56,17 @@ pub fn save_version(d: &Drawing) -> Version {
     d.header.get("ACADVER").and_then(cadcraft_doc::HVal::as_str).and_then(Version::for_acadver).unwrap_or_default()
 }
 
+/// The version a drawing is saved in as a DWG when none is asked for. A drawing read from a DWG
+/// keeps that file's version: what the file holds beyond CADCraft's own entities is kept as the
+/// file had it, and those records are of that version (acadrust can't write some of them as
+/// another, and AutoCAD refuses the result: the 2000 sample drawings saved as 2004). Any other
+/// drawing is saved as at least 2004: an R2000 DWG has no true colours, transparency, table
+/// styles or gradients, so a drawing from an R2000 DXF doesn't lose them by default.
+pub fn dwg_save_version(d: &Drawing) -> Version {
+    let own = save_version(d);
+    if d.foreign.dwg_source.is_some() { own } else { own.max(Version::R2004) }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum IoError {
     #[error("{0}")]
@@ -131,10 +142,8 @@ pub fn write_with(d: &Drawing, name: impl AsRef<Path>, opts: &SaveOptions) -> Re
                 (false, false) => craft_dxf::write_ascii_in(&tags, &code_page),
             })
         }
-        // The DWG at the version asked for. Without one, at least 2004: R2000 DWG has no true
-        // colours, transparency, table styles or gradients, so a drawing from an R2000 DXF
-        // doesn't lose them by default.
-        Some(Format::Dwg) if !opts.binary => write_dwg(d, opts.version.unwrap_or_else(|| version.max(Version::R2004))).map(|(dwg, _)| dwg),
+        // The DWG at the version asked for, else at [`dwg_save_version`].
+        Some(Format::Dwg) if !opts.binary => write_dwg(d, opts.version.unwrap_or_else(|| dwg_save_version(d))).map(|(dwg, _)| dwg),
         _ if opts.binary => Err(IoError::Format(format!("binary output is for DXF files, not `{}`", ext(name)))),
         _ => write_framed(d, name, None),
     }
@@ -146,7 +155,7 @@ pub fn write_with(d: &Drawing, name: impl AsRef<Path>, opts: &SaveOptions) -> Re
 pub fn write_noted(d: &Drawing, name: impl AsRef<Path>, opts: &SaveOptions) -> Result<(Vec<u8>, Unwritten)> {
     let name = name.as_ref();
     if matches!(Format::from_path(name), Some(Format::Dwg)) && !opts.binary {
-        return write_dwg(d, opts.version.unwrap_or_else(|| save_version(d).max(Version::R2004)));
+        return write_dwg(d, opts.version.unwrap_or_else(|| dwg_save_version(d)));
     }
     write_with(d, name, opts).map(|b| (b, Unwritten::new()))
 }

@@ -756,14 +756,14 @@ fn run_saveas(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 /// The version a drawing is saved in at `path` when none is asked for: its `$ACADVER` (2018 by
-/// default), and for DWG at least 2004 (the io layer's rule: R2000 DWG has no true colours).
+/// default). As a DWG, a drawing read from a DWG keeps that file's version, and any other is at
+/// least 2004 (the io layer's rule, `cadcraft_io::dwg_save_version`: R2000 DWG has no true
+/// colours, and a DWG's kept records are of the version it was read in).
 fn drawing_version(s: &Session, path: &str) -> Version {
-    let v = s
-        .state()
-        .ok()
-        .and_then(|st| st.drawing().header.get("ACADVER").and_then(cadcraft_doc::HVal::as_str).and_then(Version::for_acadver))
-        .unwrap_or_default();
-    if is_dxf(path) { v } else { v.max(Version::R2004) }
+    let Ok(st) = s.state() else { return Version::default() };
+    let d = st.drawing();
+    let v = d.header.get("ACADVER").and_then(cadcraft_doc::HVal::as_str).and_then(Version::for_acadver).unwrap_or_default();
+    if is_dxf(path) || d.foreign.dwg_source.is_some() { v } else { v.max(Version::R2004) }
 }
 
 /// `document.switch index`: require the index, cancel the running command, activate that drawing and bump the epoch even if it was already active (screenshot identity).
