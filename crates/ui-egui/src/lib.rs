@@ -1096,9 +1096,16 @@ impl CadApp {
         let t0 = now_ms();
         control::begin_frame(ui.ctx());
         let t = theme::Tokens::get();
-        chrome::title_and_toolbar(self, ui);
-        if self.ui.in_window_menu {
-            menus::menu_bar(self, ui);
+        // With the ribbon, its own bar (File, the commands reached most, the drawing's name) takes
+        // the place of the tool bar and the menu bar; a window with the integrated macOS title
+        // bar keeps that row.
+        if self.ui.ribbon && !self.integrated_titlebar {
+            ribbon::bar(self, ui);
+        } else {
+            chrome::title_and_toolbar(self, ui);
+            if self.ui.in_window_menu {
+                menus::menu_bar(self, ui);
+            }
         }
         if self.ui.show_status_bar {
             chrome::status_bar(self, ui);

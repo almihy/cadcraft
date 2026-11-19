@@ -476,6 +476,70 @@ fn tab_row(app: &mut CadApp, ui: &mut egui::Ui, row: Rect) {
     }
 }
 
+const BAR_H: f32 = 34.0;
+/// The bar's buttons after File: the commands reached most.
+const BAR_TOOLS: &[Tool] =
+    &[(Icon::New, "new", "New"), (Icon::Open, "ui.open", "Open"), (Icon::Save, "qsave", "Save"), (Icon::Undo, "u", "Undo"), (Icon::Redo, "redo", "Redo"), (Icon::Plot, "plot", "Plot")];
+
+/// File, and under it the other menus: with the ribbon the menu bar is put away, as AutoCAD's is.
+fn file_menu(app: &CadApp, ui: &mut egui::Ui, r: Rect, chosen: &mut Option<String>) {
+    let t = Tokens::get();
+    let resp = ui.interact(r, ui.scope_id().with("rb_file"), Sense::click());
+    hover_fill(ui, r, &resp);
+    ui.painter().text(pos2(r.left() + 9.0, r.center().y), egui::Align2::LEFT_CENTER, crate::i18n::menu("File"), egui::FontId::proportional(12.5), t.text);
+    chevron(ui, pos2(r.right() - 9.0, r.center().y));
+    icons::describe_control(ui, &resp, &crate::i18n::menu("File"), None, false);
+    let tree = crate::menus::tree(app);
+    egui::Popup::menu(&resp).show(|ui| {
+        for (name, entries) in &tree {
+            if name == "File" {
+                entries.iter().for_each(|e| crate::menus::entry_ui(ui, e, chosen));
+                ui.separator();
+            } else {
+                ui.menu_button(crate::i18n::menu(name), |ui| entries.iter().for_each(|e| crate::menus::entry_ui(ui, e, chosen)));
+            }
+        }
+    });
+}
+
+/// The bar over the ribbon: File, the commands reached most, and the drawing's name in the
+/// middle. It takes the place of the title, the tool bar and the menu bar.
+pub fn bar(app: &mut CadApp, ui: &mut egui::Ui) {
+    let t = Tokens::get();
+    let mut asked = Asked::default();
+    let mut chosen = None;
+    egui::Panel::top("cc_ribbon_bar").exact_size(BAR_H).frame(egui::Frame::NONE.fill(t.chrome_dark)).show(ui, |ui| {
+        let r = ui.max_rect();
+        let file_w = text_w(ui, &crate::i18n::menu("File")) + 34.0;
+        file_menu(app, ui, Rect::from_min_size(pos2(r.left() + 6.0, r.top() + 5.0), vec2(file_w, BAR_H - 10.0)), &mut chosen);
+        let mut x = r.left() + file_w + 16.0;
+        for (i, (icon, cmd, label)) in BAR_TOOLS.iter().enumerate() {
+            if i == 3 {
+                x += 10.0;
+            }
+            let br = Rect::from_min_size(pos2(x, r.center().y - 13.0), vec2(26.0, 26.0));
+            let resp = ui.interact(br, ui.scope_id().with(("rb_bar", *cmd)), Sense::click());
+            hover_fill(ui, br, &resp);
+            icons::paint(ui.painter(), br.shrink(4.0), *icon, false);
+            describe(ui, &resp, label);
+            if resp.on_hover_text(crate::i18n::t(label)).clicked() {
+                asked.start = Some(cmd);
+            }
+            x += 30.0;
+        }
+        if let Ok(st) = app.session.state() {
+            let title = if st.title.contains('.') { st.title.clone() } else { format!("{}.dwg", st.title) };
+            ui.painter().text(pos2(r.center().x.max(x + 60.0), r.center().y), egui::Align2::CENTER_CENTER, title, egui::FontId::proportional(12.5), t.text_dim);
+        }
+    });
+    if let Some(id) = chosen {
+        crate::menus::activate(app, &id);
+    }
+    if let Some(cmd) = asked.start {
+        app.start(cmd);
+    }
+}
+
 /// The ribbon, under the title and tool bar.
 pub fn show(app: &mut CadApp, ui: &mut egui::Ui) {
     let t = Tokens::get();
