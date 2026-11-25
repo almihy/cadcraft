@@ -26,6 +26,9 @@ const DEPTH: usize = 16;
 const CHORD_M: f64 = 0.001;
 /// An ellipse whose axes differ by less than this share is a circle.
 const ROUND: f64 = 1e-9;
+/// The most pieces given when none is asked for: far past any plan (a school's ground floor is about 90,000), short of
+/// what a placement array nested in arrays could make of a small file.
+pub const MOST_PIECES: usize = 10_000_000;
 
 /// What [`Opened::line_items`] takes.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -41,6 +44,8 @@ pub struct LinesParams {
     /// given as the edges of the triangles it is filled by, as a program that draws fills as
     /// meshes shows it; without it a solid, like every fill, is left out.
     pub solids: bool,
+    /// Past this many pieces an error says so instead; none: [`MOST_PIECES`].
+    pub most: Option<usize>,
 }
 
 /// One piece of a drawing's lines, metres less the offset.
@@ -102,6 +107,7 @@ impl Opened {
             Some(c) if c.is_finite() && c > 0.0 => c,
             Some(c) => return Err(format!("`chord` is metres, more than 0, not {c}")),
         };
+        let most = p.most.unwrap_or(MOST_PIECES);
         let wanted: Option<Vec<String>> = match &p.layers {
             None => None,
             Some(names) => Some(
@@ -123,15 +129,20 @@ impl Opened {
             tol: chord / metres,
             items: Vec::new(),
             left_out: BTreeMap::new(),
+            most,
+            over: false,
         };
         for e in self.drawing.model.iter() {
             let handle = format!("{:X}", e.handle.0);
             walk.entity(e, &handle, &At { layer: &e.common.layer, block: None, zero: false, dimension: false }, Mat3::IDENTITY, 0);
+            if walk.over {
+                return Err(format!("the drawing draws more than {most} pieces; take fewer with `layers`, or allow more with `most`"));
+            }
         }
         Ok(Lines { items: walk.items, unit, header_unit: self.unit, metres, offset: [off.x * metres, off.y * metres], left_out: walk.left_out })
     }
 
-    /// Model space's lines by layer (JSON params: `layers`?, `unit`?, `chord`?, `solids`?), as
+    /// Model space's lines by layer (JSON params: `layers`?, `unit`?, `chord`?, `solids`?, `most`?), as
     /// JSON:
     ///
     /// - `segs`, `arcs`, `circles`: by layer name, lists of `[x0, y0, x1, y1]`,
@@ -149,7 +160,7 @@ impl Opened {
 impl LinesParams {
     /// The parameters a JSON object names (null or an empty one: none).
     pub fn from_json(v: &Value) -> Result<LinesParams, String> {
-        const KEYS: [&str; 4] = ["layers", "unit", "chord", "solids"];
+        const KEYS: [&str; 5] = ["layers", "unit", "chord", "solids", "most"];
         let empty = serde_json::Map::new();
         let m = match v {
             Value::Null => &empty,
@@ -176,6 +187,10 @@ impl LinesParams {
             solids: match given("solids") {
                 None => false,
                 Some(v) => v.as_bool().ok_or_else(|| format!("`solids` is true or false, not {v}"))?,
+            },
+            most: match given("most") {
+                None => None,
+                Some(v) => Some(v.as_u64().and_then(|n| usize::try_from(n).ok()).ok_or_else(|| format!("`most` is a count of pieces, not {v}"))?),
             },
         })
     }
@@ -290,6 +305,9 @@ struct Walk<'a> {
     tol: f64,
     items: Vec<LineItem>,
     left_out: BTreeMap<&'static str, usize>,
+    /// The most pieces taken, and whether more were met (the walk then stops).
+    most: usize,
+    over: bool,
 }
 
 impl Walk<'_> {
@@ -313,7 +331,7 @@ impl Walk<'_> {
     }
 
     fn entity(&mut self, e: &Entity, handle: &str, at: &At, m: Mat3, depth: usize) {
-        if !e.common.visible {
+        if self.over || !e.common.visible {
             return;
         }
         match &e.kind {
@@ -383,6 +401,9 @@ impl Walk<'_> {
         let rows = ins.rows.clamp(1, 10_000);
         for r in 0..rows {
             for c in 0..cols {
+                if self.over {
+                    return;
+                }
                 let off = Vec2::new(ins.col_spacing * f64::from(c), ins.row_spacing * f64::from(r)).rotate(ins.rotation);
                 let local = Mat3::translate(off).then_before(ins.transform(blk.base.xy()));
                 self.contents(blk, handle, at, m.then_before(local), depth);
@@ -483,6 +504,10 @@ impl Walk<'_> {
     }
 
     fn push(&mut self, piece: Piece, handle: &str, at: &At, kind: &'static str) {
+        if self.items.len() >= self.most {
+            self.over = true;
+            return;
+        }
         self.items.push(LineItem {
             handle: handle.to_string(),
             layer: at.layer.to_string(),

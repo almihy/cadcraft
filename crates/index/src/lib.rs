@@ -35,7 +35,7 @@ use cadcraft_geom::{Bounds2, Vec2};
 pub use cadcraft_fonts::given;
 pub use flat::{Flat, Shape};
 pub use kinds::{KINDS, kind_of};
-pub use lines::{LineItem, Lines, LinesParams, Piece};
+pub use lines::{LineItem, Lines, LinesParams, MOST_PIECES, Piece};
 pub use pack::{FORMAT, pack, unpack};
 pub use picture::Picture;
 pub use query::Query;

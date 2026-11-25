@@ -242,6 +242,28 @@ fn lines_come_by_layer_in_metres_with_blocks_exploded() {
 }
 
 #[test]
+fn lines_stop_past_the_most_pieces_they_take() {
+    // one line placed as an array of 10,000 by 10,000: a hundred million lines from a few bytes
+    let mut d = Drawing::new_metric();
+    d.header.set_i64("INSUNITS", 6);
+    block_of(&mut d, "TICK", vec![("0", line((0.0, 0.0), (1.0, 0.0)))]);
+    let ins = Insert { block: "TICK".into(), cols: 10_000, rows: 10_000, col_spacing: 2.0, row_spacing: 2.0, ..Insert::default() };
+    d.add(&Space::Model, on("GRID"), EntityKind::Insert(ins)).unwrap();
+    let o = Opened::new(d);
+    let err = o.lines(&json!({"most": 1000})).unwrap_err();
+    assert!(err.contains("more than 1000 pieces"), "{err}");
+    assert!(o.lines(&json!({"most": -1})).unwrap_err().contains("`most` is a count"));
+    assert_eq!(o.line_items(&LinesParams { most: Some(1000), ..LinesParams::default() }).map(|l| l.items.len()).ok(), None);
+    // within the bound, every piece
+    let mut small = Drawing::new_metric();
+    small.header.set_i64("INSUNITS", 6);
+    block_of(&mut small, "TICK", vec![("0", line((0.0, 0.0), (1.0, 0.0)))]);
+    let ins = Insert { block: "TICK".into(), cols: 10, rows: 10, col_spacing: 2.0, row_spacing: 2.0, ..Insert::default() };
+    small.add(&Space::Model, on("GRID"), EntityKind::Insert(ins)).unwrap();
+    assert_eq!(Opened::new(small).lines(&json!({"most": 100})).unwrap()["segs"]["GRID"].as_array().map(Vec::len), Some(100));
+}
+
+#[test]
 fn lines_take_the_unit_they_are_told_over_the_headers() {
     // drawn in metres, the header says inches
     let mut d = plan(0.0, 0.0);
