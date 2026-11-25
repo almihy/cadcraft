@@ -19,3 +19,24 @@ pub(crate) fn of(d: &Drawing) -> (&'static str, f64) {
         _ => ("unitless", 1.0),
     }
 }
+
+/// The units a drawing may be said to be in, by the names [`of`] gives them.
+pub(crate) const NAMES: [&str; 10] = ["mm", "cm", "dm", "m", "km", "in", "ft", "yards", "miles", "US survey feet"];
+
+/// The unit a name names (any case) and millimetres to one of it.
+pub(crate) fn named(name: &str) -> Option<(&'static str, f64)> {
+    let n = name.trim().to_lowercase();
+    Some(match n.as_str() {
+        "mm" => ("mm", 1.0),
+        "cm" => ("cm", 10.0),
+        "dm" => ("dm", 100.0),
+        "m" => ("m", 1000.0),
+        "km" => ("km", 1e6),
+        "in" => ("in", 25.4),
+        "ft" => ("ft", 304.8),
+        "yards" => ("yards", 914.4),
+        "miles" => ("miles", 1_609_344.0),
+        "us survey feet" => ("US survey feet", 304.800_609_601_2),
+        _ => return None,
+    })
+}

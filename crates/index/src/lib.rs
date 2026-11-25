@@ -6,7 +6,9 @@
 //! the agent's questions in its terms: [`Opened::query`] the items by layer, kind, box and text, a
 //! page at a time, a block placement one item; [`Opened::block`] what a block definition holds;
 //! [`Opened::picture`] a page of it drawn by CADCraft's renderer; [`Opened::shapes`] its lines
-//! placed and flattened, blocks exploded, for finding the outlines they close.
+//! placed and flattened, blocks exploded, for finding the outlines they close; [`Opened::lines`] its
+//! lines by layer in metres, arcs kept as arcs and dimensions as the lines they draw, for a reader
+//! of plans.
 //!
 //! Every length and point given out is in millimetres (a drawing in metres comes ×1000; a unitless
 //! one is taken as millimetres), to the hundredth. A drawing far out in a real grid (a survey in
@@ -17,6 +19,7 @@
 
 mod flat;
 mod kinds;
+mod lines;
 mod pack;
 mod picture;
 mod query;
@@ -32,6 +35,7 @@ use cadcraft_geom::{Bounds2, Vec2};
 pub use cadcraft_fonts::given;
 pub use flat::{Flat, Shape};
 pub use kinds::{KINDS, kind_of};
+pub use lines::{LineItem, Lines, LinesParams, Piece};
 pub use pack::{FORMAT, pack, unpack};
 pub use picture::Picture;
 pub use query::Query;
